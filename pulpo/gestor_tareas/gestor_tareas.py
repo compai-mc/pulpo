@@ -151,6 +151,27 @@ class GestorTareas:
         if task_id in tasks:
             return tasks[task_id].get(field)
         return None
+    
+    def set_task_field(self, job_id: str, task_id: str, field: str, value):
+        """
+        Modifica o crea un campo dentro del task indicado de un job.
+        Si el job y el task existen, actualiza el campo y guarda el documento.
+        Si el task no existe, lo crea con el campo indicado.
+        """
+        job = self.collection.get(job_id)
+        if not job:
+            return False  
+
+        tasks = job.get("tasks", {})
+
+        if task_id not in tasks:
+            tasks[task_id] = {}
+
+        tasks[task_id][field] = value
+        job["tasks"] = tasks
+
+        self.collection.update(job)  
+        return True
 
 
     async def _publicar_tarea(self, msg: dict):
@@ -180,15 +201,15 @@ class GestorTareas:
         job = self.collection.get(job_id)
         if not job:
             print(f"[!] Job '{job_id}' no encontrado")
-            return
+            return {"error": "Job no encontrado"}
 
         if task_id not in job["tasks"]:
             print(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
-            return
+            return {"error": "Tarea no encontrada en el job"}
 
         if job["tasks"][task_id]["completed"]:
             print(f"[i] Tarea '{task_id}' ya estaba marcada como completada")
-            return
+            return {"error": "Tarea ya completada"}
 
         job["tasks"][task_id]["completed"] = True
         self.collection.update(job)
@@ -202,7 +223,7 @@ class GestorTareas:
             "uuid": str(uuid.uuid4())
         })
 
-        # ✅ Callback opcional
+        # ✅ Callback
         if self.on_task_complete_callback:
             await self.on_task_complete_callback(job_id, task_id)
 
@@ -222,6 +243,10 @@ class GestorTareas:
                 print("[🎉] Todos los jobs completados")
                 if self.on_all_complete_callback:
                     await self.on_all_complete_callback()
+
+            return {"status": "ok", "message": f"Tarea '{task_id}' completada en job '{job_id}'. Todas las tareas del job están completas."}
+        
+        return {"status": "ok", "message": f"Tarea '{task_id}' completada en job '{job_id}'"}
 
     def _all_jobs_completed(self) -> bool:
         cursor = self.collection.find({})
@@ -278,6 +303,7 @@ async def main2():
     devolucion = monitor.get_task_field("c37565d2-f436-46fd-a7a7-508e1b72f379","tarea_prueba1", "card_id")
     print(devolucion)
     await monitor.stop()
+
 
 
 if __name__ == "__main__":
