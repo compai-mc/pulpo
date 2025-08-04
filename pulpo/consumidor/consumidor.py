@@ -1,5 +1,6 @@
 # mi_paquete/consumer.py
 from aiokafka import AIOKafkaConsumer
+from aiokafka import TopicPartition
 import asyncio
 import os
 
@@ -65,3 +66,33 @@ class KafkaEventConsumer:
             await self.consumer.commit()
             # Llamamos al callback con el mensaje recibido
             await self.callback(message)
+
+
+    async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        """
+        Lee el mensaje en el offset indicado sin consumirlo (sin commit).
+        :param offset: Offset que se desea leer.
+        :param partition: Partición del tópico (por defecto 0).
+        :param timeout_ms: Tiempo máximo de espera para el mensaje.
+        :return: Mensaje si existe, None si no hay mensaje.
+        """
+        if not self.consumer:
+            raise RuntimeError("El consumidor no está iniciado. Llama primero a start().")
+
+        # Asignar manualmente solo esa partición
+        tp = TopicPartition(self.topic, partition)
+        await self.consumer.assign([tp])
+
+        # Posicionarse en el offset deseado
+        await self.consumer.seek(tp, offset)
+
+        # Intentar obtener el mensaje sin avanzar el offset global
+        result = await self.consumer.getmany(timeout_ms=timeout_ms)
+
+        # Extraer el mensaje en ese offset, si existe
+        for records in result.values():
+            for msg in records:
+                if msg.offset == offset:
+                    return msg
+
+        return None  # No encontrado            
