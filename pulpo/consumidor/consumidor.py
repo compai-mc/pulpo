@@ -70,29 +70,28 @@ class KafkaEventConsumer:
 
     async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
         """
-        Lee el mensaje en el offset indicado sin consumirlo (sin commit).
-        :param offset: Offset que se desea leer.
-        :param partition: Partición del tópico (por defecto 0).
-        :param timeout_ms: Tiempo máximo de espera para el mensaje.
-        :return: Mensaje si existe, None si no hay mensaje.
+        Lee un mensaje específico por offset usando un consumidor temporal.
         """
-        if not self.consumer:
-            raise RuntimeError("El consumidor no está iniciado. Llama primero a start().")
+        tmp_consumer = AIOKafkaConsumer(
+            bootstrap_servers=KAFKA_BROKER,
+            enable_auto_commit=False,
+            group_id=None  # sin grupo, no interfiere con otros
+        )
 
-        # Asignar manualmente solo esa partición
-        tp = TopicPartition(self.topic, partition)
-        await self.consumer.assign([tp])
+        await tmp_consumer.start()
 
-        # Posicionarse en el offset deseado
-        await self.consumer.seek(tp, offset)
+        try:
+            tp = TopicPartition(self.topic, partition)
+            await tmp_consumer.assign([tp])
+            await tmp_consumer.seek(tp, offset)
 
-        # Intentar obtener el mensaje sin avanzar el offset global
-        result = await self.consumer.getmany(timeout_ms=timeout_ms)
+            result = await tmp_consumer.getmany(timeout_ms=timeout_ms)
 
-        # Extraer el mensaje en ese offset, si existe
-        for records in result.values():
-            for msg in records:
-                if msg.offset == offset:
-                    return msg
+            for records in result.values():
+                for msg in records:
+                    if msg.offset == offset:
+                        return msg
 
-        return None  # No encontrado            
+            return None
+        finally:
+            await tmp_consumer.stop()
