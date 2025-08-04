@@ -4,6 +4,10 @@ from aiokafka import TopicPartition
 import asyncio
 import os
 
+from kafka import KafkaConsumer
+from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
+from kafka.structs import TopicPartition
+
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
 class KafkaEventConsumer:
@@ -68,32 +72,38 @@ class KafkaEventConsumer:
             await self.callback(message)
 
 
-    async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-        from asyncio import CancelledError
-
-        tmp_consumer = AIOKafkaConsumer(
-            bootstrap_servers=KAFKA_BROKER,
-            enable_auto_commit=False,
-            group_id=None  # consumidor independiente, sin grupo
-        )
-
-        await tmp_consumer.start()
-
+    def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        """
+        Versión síncrona para leer un offset específico.
+        """
         try:
+            consumer = KafkaConsumer(
+                bootstrap_servers=KAFKA_BROKER,
+                group_id=self.id_grupo,
+                enable_auto_commit=False,
+                auto_offset_reset="none",
+                consumer_timeout_ms=timeout_ms
+            )
+
+            # Asignar partición y buscar offset
             tp = TopicPartition(self.topic, partition)
-            await tmp_consumer.assign([tp])
-            await tmp_consumer.seek(tp, offset)
+            consumer.assign([tp])
+            consumer.seek(tp, offset)
 
-            result = await tmp_consumer.getmany(timeout_ms=timeout_ms)
-
-            for records in result.values():
-                for msg in records:
-                    if msg.offset == offset:
-                        return msg
+            # Leer mensaje (bloqueante hasta timeout_ms)
+            for msg in self.consumer:
+                if msg.offset == offset:
+                    return msg
+                elif msg.offset > offset:
+                    break  # Pasamos el offset buscado
 
             return None
+
+        except NoBrokersAvailable:
+            raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
+        except KafkaTimeoutError:
+            raise RuntimeError(f"Timeout al leer offset {offset}")
         finally:
-            try:
-                await tmp_consumer.stop()
-            except CancelledError:
-                print("⚠️ CancelledError al detener tmp_consumer (esperado)")
+            if consumer:
+                consumer.close()
+
