@@ -91,7 +91,7 @@ class KafkaEventConsumer:
             consumer.seek(tp, offset)
 
             # Leer mensaje (bloqueante hasta timeout_ms)
-            for msg in self.consumer:
+            for msg in consumer:
                 if msg.offset == offset:
                     return msg
                 elif msg.offset > offset:
