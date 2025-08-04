@@ -69,13 +69,12 @@ class KafkaEventConsumer:
 
 
     async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-        """
-        Lee un mensaje específico por offset usando un consumidor temporal.
-        """
+        from asyncio import CancelledError
+
         tmp_consumer = AIOKafkaConsumer(
             bootstrap_servers=KAFKA_BROKER,
             enable_auto_commit=False,
-            group_id=None  # sin grupo, no interfiere con otros
+            group_id=None  # consumidor independiente, sin grupo
         )
 
         await tmp_consumer.start()
@@ -94,4 +93,7 @@ class KafkaEventConsumer:
 
             return None
         finally:
-            await tmp_consumer.stop()
+            try:
+                await tmp_consumer.stop()
+            except CancelledError:
+                print("⚠️ CancelledError al detener tmp_consumer (esperado)")
