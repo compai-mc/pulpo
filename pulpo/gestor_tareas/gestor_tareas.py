@@ -178,7 +178,7 @@ class GestorTareas:
         await self.producer.publish(TOPIC_TASK, msg)
 
     async def _on_kafka_message(self, message):
-        print("Mensaje recibido en el tópico job.task.completed:", message.value.decode("utf-8"))
+        print("Mensaje recibido en el tópico: ", message.value.decode("utf-8"))
         try:
             data = json.loads(message.value.decode("utf-8"))
             job_id = data.get("job_id")

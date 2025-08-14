@@ -35,10 +35,10 @@ class KafkaEventConsumer:
             max_poll_interval_ms=300000,        # 5 minutos (default: 5m)
             request_timeout_ms=40000,           # 40 segundos (default: 40s)
             retry_backoff_ms=2000,              # 2 segundos entre reintentos (default: 100ms)
-            auto_offset_reset="earliest",       # Lee desde el inicio si no hay offset
+            auto_offset_reset="latest",       # Lee desde el inicio si no hay offset
             isolation_level="read_committed",
             enable_auto_commit=True,
-            auto_commit_interval_ms=5000
+            auto_commit_interval_ms=500
             
         )
 
