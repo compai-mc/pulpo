@@ -66,10 +66,11 @@ class KafkaEventConsumer:
         """Consume los mensajes de Kafka y ejecuta el callback."""
         async for message in self.consumer:
             print(f"Mensaje recibido en el tópico {self.topic}: {message.value.decode('utf-8')}")
-            # Consumimos el mensaje
             await self.consumer.commit()
-            # Llamamos al callback con el mensaje recibido
-            await self.callback(message)
+
+            # Procesa el mensaje en segundo plano para no bloquear el poll
+            asyncio.create_task(self.callback(message))
+
 
 
     def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
