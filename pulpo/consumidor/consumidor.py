@@ -32,20 +32,24 @@ class KafkaEventConsumer:
         self.queue = asyncio.Queue()
 
     async def start(self, broker=KAFKA_BROKER):
+        
+
         self.consumer = AIOKafkaConsumer(
             self.topic,
-            bootstrap_servers=broker,
             group_id=self.id_grupo,
-            session_timeout_ms=15*1000*60,  # Aumentar a 
-            heartbeat_interval_ms=20000,  # Reducir a 20s (debe ser < session_timeout_ms/3)
-            max_poll_interval_ms=1200000,  # Aumentar a 20min si los procesos son largos
-            request_timeout_ms=120000,
-            retry_backoff_ms=10000,  # Aumentar backoff
+            session_timeout_ms=180000,  # 3 minutos (balance entre detección de fallos y tolerancia)
+            heartbeat_interval_ms=25000,  # 25s (mantiene relación 1:3 con session_timeout)
+            max_poll_interval_ms=900000,  # 15 minutos (ajustado a tu necesidad real)
+            request_timeout_ms=150000,  # 2.5 minutos
+            retry_backoff_ms=15000,  # 15s (más generoso)
             auto_offset_reset="latest",
             enable_auto_commit=False,
             isolation_level="read_committed",
-            metadata_max_age_ms=30000  # Actualizar metadatos más frecuentemente
-        )
+            metadata_max_age_ms=45000,  # 45s
+            connections_max_idle_ms=540000,  # 9 minutos (evita cierres inesperados)
+            socket_timeout_ms=120000,  # 2 minutos timeout de socket
+            )
+
         await self.consumer.start()
 
         # Start consumer loop
