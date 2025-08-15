@@ -47,7 +47,6 @@ class KafkaEventConsumer:
             isolation_level="read_committed",
             metadata_max_age_ms=45000,  # 45s
             connections_max_idle_ms=540000,  # 9 minutos (evita cierres inesperados)
-            socket_timeout_ms=120000,  # 2 minutos timeout de socket
             )
 
         await self.consumer.start()
