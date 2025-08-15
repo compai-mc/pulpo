@@ -36,7 +36,7 @@ class KafkaEventConsumer:
             self.topic,
             bootstrap_servers=broker,
             group_id=self.id_grupo,
-            session_timeout_ms=720000,  # Aumentar a 180s
+            session_timeout_ms=3000000,  # Aumentar a 
             heartbeat_interval_ms=20000,  # Reducir a 20s (debe ser < session_timeout_ms/3)
             max_poll_interval_ms=1200000,  # Aumentar a 20min si los procesos son largos
             request_timeout_ms=120000,
