@@ -36,14 +36,15 @@ class KafkaEventConsumer:
             self.topic,
             bootstrap_servers=broker,
             group_id=self.id_grupo,
-            session_timeout_ms=120000,   # 120s margen de heartbeat
-            heartbeat_interval_ms=30000, # cada 30s
-            max_poll_interval_ms=600000, # 10 min para callbacks largos
-            request_timeout_ms=90000,
-            retry_backoff_ms=5000,
+            session_timeout_ms=720000,  # Aumentar a 180s
+            heartbeat_interval_ms=20000,  # Reducir a 20s (debe ser < session_timeout_ms/3)
+            max_poll_interval_ms=1200000,  # Aumentar a 20min si los procesos son largos
+            request_timeout_ms=120000,
+            retry_backoff_ms=10000,  # Aumentar backoff
             auto_offset_reset="latest",
             enable_auto_commit=False,
-            isolation_level="read_committed"
+            isolation_level="read_committed",
+            metadata_max_age_ms=30000  # Actualizar metadatos más frecuentemente
         )
         await self.consumer.start()
 
@@ -69,16 +70,21 @@ class KafkaEventConsumer:
             await self.consumer.stop()
 
     async def _consume_loop(self):
-        """Loop principal de consumo que alimenta la queue interna"""
-        try:
-            async for message in self.consumer:
-                await self.queue.put(message)
-        except asyncio.CancelledError:
-            pass
-        except ConsumerStoppedError:
-            pass
-        except Exception as e:
-            print(f"[!] Error en el loop de consumo: {e}")
+        while True:
+            try:
+                async for message in self.consumer:
+                    await self.queue.put(message)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[!] Error en el loop de consumo: {e}. Reintentando en 10s...")
+                await asyncio.sleep(10)
+                await self._reconnect()
+
+    async def _reconnect(self):
+        if self.consumer:
+            await self.consumer.stop()
+        await self.start()
 
     async def _worker_loop(self):
         """Procesa mensajes en paralelo desde la queue con timeout y commit con reintentos"""
