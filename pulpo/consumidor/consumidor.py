@@ -32,10 +32,11 @@ class KafkaEventConsumer:
         self.queue = asyncio.Queue()
 
     async def start(self, broker=KAFKA_BROKER):
-        
+
 
         self.consumer = AIOKafkaConsumer(
             self.topic,
+            bootstrap_servers=broker,
             group_id=self.id_grupo,
             session_timeout_ms=180000,  # 3 minutos (balance entre detección de fallos y tolerancia)
             heartbeat_interval_ms=25000,  # 25s (mantiene relación 1:3 con session_timeout)
@@ -46,7 +47,7 @@ class KafkaEventConsumer:
             enable_auto_commit=False,
             isolation_level="read_committed",
             metadata_max_age_ms=45000,  # 45s
-            connections_max_idle_ms=540000,  # 9 minutos (evita cierres inesperados)
+            connections_max_idle_ms=1000000,  
             )
 
         await self.consumer.start()
