@@ -25,20 +25,20 @@ class KafkaEventConsumer:
 
     async def start(self, broker=KAFKA_BROKER):
         """Inicia el consumidor de Kafka."""
+
         self.consumer = AIOKafkaConsumer(
             self.topic,
             bootstrap_servers=broker,
             group_id=self.id_grupo,
-            session_timeout_ms=45000,
-            heartbeat_interval_ms=15000,
-            max_poll_interval_ms=600000,  # 10 min para callbacks pesados
-            request_timeout_ms=70000,
-            retry_backoff_ms=2000,
-            auto_offset_reset="latest",   # Arranca desde lo más reciente si no hay offset
+            session_timeout_ms=60000,        # 60s margen de heartbeat
+            heartbeat_interval_ms=20000,     # cada 20s
+            max_poll_interval_ms=600000,     # 10 min para callbacks
+            request_timeout_ms=90000,        # 90s para fetch
+            retry_backoff_ms=5000,           # 5s entre reintentos
+            auto_offset_reset="latest",
             isolation_level="read_committed",
-            enable_auto_commit=False      # Commit manual
+            enable_auto_commit=False
         )
-
         await self.consumer.start()
 
         if self.consumer_task is None:
