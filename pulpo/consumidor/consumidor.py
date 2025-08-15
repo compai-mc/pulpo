@@ -2,6 +2,10 @@ import asyncio
 from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
 import os
 
+from kafka import KafkaConsumer
+from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
+from kafka.structs import TopicPartition
+
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
 class KafkaEventConsumer:
@@ -104,3 +108,39 @@ class KafkaEventConsumer:
                     self.queue.task_done()
             except asyncio.CancelledError:
                 break
+
+    def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        """
+        Versión síncrona para leer un offset específico.
+        """
+        try:
+            consumer = KafkaConsumer(
+                bootstrap_servers=KAFKA_BROKER,
+                group_id=self.id_grupo,
+                enable_auto_commit=False,
+                auto_offset_reset="none",
+                consumer_timeout_ms=timeout_ms
+            )
+
+            # Asignar partición y buscar offset
+            tp = TopicPartition(self.topic, partition)
+            consumer.assign([tp])
+            consumer.seek(tp, offset)
+
+            # Leer mensaje (bloqueante hasta timeout_ms)
+            for msg in consumer:
+                if msg.offset == offset:
+                    return msg
+                elif msg.offset > offset:
+                    break  # Pasamos el offset buscado
+
+            return None
+
+        except NoBrokersAvailable:
+            raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
+        except KafkaTimeoutError:
+            raise RuntimeError(f"Timeout al leer offset {offset}")
+        finally:
+            if consumer:
+                consumer.close()
+
