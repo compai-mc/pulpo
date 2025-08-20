@@ -38,19 +38,22 @@ def arreglar_json(json_str: str):
         raise ValueError(f"No se pudo reparar el JSON: {e}")
 
 
-# -----------------
-# Ejemplos
-bad_jsons = [
-    "{'a': 1, 'b': True, 'c': None,}",     # errores comunes
-    '{"a":1, "b":2,}',                     # coma extra
-    "{unquoted: 'value'}"                  # json5 style
-]
+#### Pruebas ##########################
+if __name__ == "__main__":
 
-for s in bad_jsons:
-    print("Entrada:", s)
-    try:
-        data = fix_json(s)
-        print("Arreglado:", data)
-    except Exception as e:
-        print("Error:", e)
-    print("-"*40)
+    # -----------------
+    # Ejemplos
+    bad_jsons = [
+        "{'a': 1, 'b': True, 'c': None,}",     # errores comunes
+        '{"a":1, "b":2,}',                     # coma extra
+        "{unquoted: 'value'}"                  # json5 style
+    ]
+
+    for s in bad_jsons:
+        print("Entrada:", s)
+        try:
+            data = fix_json(s)
+            print("Arreglado:", data)
+        except Exception as e:
+            print("Error:", e)
+        print("-"*40)
