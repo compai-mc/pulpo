@@ -52,7 +52,7 @@ if __name__ == "__main__":
     for s in bad_jsons:
         print("Entrada:", s)
         try:
-            data = fix_json(s)
+            data = arreglar_json(s)
             print("Arreglado:", data)
         except Exception as e:
             print("Error:", e)
