@@ -213,10 +213,6 @@ class GestorTareas:
             print(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
             return {"error": "Tarea no encontrada en el job"}
 
-        if job["tasks"][task_id]["completed"]:
-            print(f"[i] Tarea '{task_id}' ya estaba marcada como completada")
-            return {"error": "Tarea ya completada"}
-
         job["tasks"][task_id]["completed"] = True
         print(f"[✔] Tarea '{task_id}' actualizandose en BBDD en job '{job_id}'")
         self.collection.update(job)
