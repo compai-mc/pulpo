@@ -42,6 +42,13 @@ class GestorTareas:
 
         self.client = ArangoClient(hosts=ARANGO_HOST)
         self.db = self.client.db(ARANGO_DB, username=ARANGO_USER, password=ARANGO_PASSWORD)
+        
+        print(f"[INFO] Conectado a DB: {self.db.name}")
+        print("[INFO] Colecciones disponibles:", [c["name"] for c in self.db.collections()])
+
+        if not self.db.has_collection(ARANGO_COLLECTION):
+            raise RuntimeError(f"La colección {ARANGO_COLLECTION} no existe en la DB {ARANGO_DB}")
+
         self.collection = self.db.collection(ARANGO_COLLECTION)
 
         self.consumer = None
@@ -195,6 +202,7 @@ class GestorTareas:
 
     async def task_completed(self, job_id: str, task_id: str):
         print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada...")
+        print([col["name"] for col in self.db.collections()])
         job = self.collection.get(job_id)
         print(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...")
         if not job:
