@@ -14,7 +14,7 @@ from consumidor.consumidor import KafkaEventConsumer
 from publicador.publicador import KafkaEventPublisher
 
 ARANGO_HOST = os.getenv("ARANGO_HOST", "http://alcazar:8529")
-ARANGO_DB = os.getenv("ARANGO_DB", "compai_db")
+ARANGO_DB_COMPAI = os.getenv("ARANGO_DB_COMPAI", "compai_db")
 ARANGO_USER = os.getenv("ARANGO_USER", "root")
 ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "sabbath")
 ARANGO_COLLECTION = os.getenv("ARANGO_COLLECTION", "tareas")
@@ -41,13 +41,13 @@ class GestorTareas:
         self.topic_finalizacion_global = topic_finalizacion_global
 
         self.client = ArangoClient(hosts=ARANGO_HOST)
-        self.db = self.client.db(ARANGO_DB, username=ARANGO_USER, password=ARANGO_PASSWORD)
+        self.db = self.client.db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
         
         print(f"[INFO] Conectado a DB: {self.db.name}")
         print("[INFO] Colecciones disponibles:", [c["name"] for c in self.db.collections()])
 
         if not self.db.has_collection(ARANGO_COLLECTION):
-            raise RuntimeError(f"La colección {ARANGO_COLLECTION} no existe en la DB {ARANGO_DB}")
+            raise RuntimeError(f"La colección {ARANGO_COLLECTION} no existe en la DB {ARANGO_DB_COMPAI}")
 
         self.collection = self.db.collection(ARANGO_COLLECTION)
 
