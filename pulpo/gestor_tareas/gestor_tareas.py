@@ -179,22 +179,23 @@ class GestorTareas:
 
     async def _on_kafka_message(self, message):
         print("Mensaje recibido en el tópico: ", message.value.decode("utf-8"))
-        try:
-            data = json.loads(message.value.decode("utf-8"))
-            job_id = data.get("job_id")
-            task_id = data.get("task_id")
-            if job_id and task_id:
-                # Ejecuta SIEMPRE el callback de tarea
-                if self.on_task_complete_callback:
-                    await self.on_task_complete_callback(job_id, task_id)
-                # Marca como completada (por si no lo estaba)
-                await self.task_completed(job_id, task_id)
+        #try:
+        data = json.loads(message.value.decode("utf-8"))
+        job_id = data.get("job_id")
+        task_id = data.get("task_id")
+        if job_id and task_id:
+            # Ejecuta SIEMPRE el callback de tarea
+            if self.on_task_complete_callback:
+                await self.on_task_complete_callback(job_id, task_id)
+            # Marca como completada (por si no lo estaba)
+            await self.task_completed(job_id, task_id)
                 # Comprueba si todas las tareas están completas y ejecuta el callback de job
-        except Exception as e:
-            print(f"Error procesando mensaje Kafka: {e}")
+        #except Exception as e:
+        #    print(f"Error procesando mensaje Kafka: {e}")
 
     async def task_completed(self, job_id: str, task_id: str):
         job = self.collection.get(job_id)
+        print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada...")
         if not job:
             print(f"[!] Job '{job_id}' no encontrado")
             return {"error": "Job no encontrado"}
