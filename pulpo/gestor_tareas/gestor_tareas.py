@@ -209,6 +209,7 @@ class GestorTareas:
             return {"error": "Tarea ya completada"}
 
         job["tasks"][task_id]["completed"] = True
+        print(f"[✔] Tarea '{task_id}' actualizandose en BBDD en job '{job_id}'")
         self.collection.update(job)
         print(f"[✔] Tarea '{task_id}' completada en job '{job_id}'")
 
