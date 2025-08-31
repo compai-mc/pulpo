@@ -194,8 +194,9 @@ class GestorTareas:
         #    print(f"Error procesando mensaje Kafka: {e}")
 
     async def task_completed(self, job_id: str, task_id: str):
-        job = self.collection.get(job_id)
         print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada...")
+        job = self.collection.get(job_id)
+        print(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...")
         if not job:
             print(f"[!] Job '{job_id}' no encontrado")
             return {"error": "Job no encontrado"}
