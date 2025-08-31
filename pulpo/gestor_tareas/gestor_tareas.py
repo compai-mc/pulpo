@@ -235,6 +235,8 @@ class GestorTareas:
             await self.on_task_complete_callback(job_id, task_id)
 
         # Si todas las tareas del job están completas
+        for t in job["tasks"].values():  print(f"{t}\n")
+
         if all(t["completed"] for t in job["tasks"].values()):
             print(f"[🎉] Job '{job_id}' completado")
             if self.on_complete_callback:
