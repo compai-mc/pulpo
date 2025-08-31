@@ -1,5 +1,6 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
+from aiokafka.structs import TopicPartition, OffsetAndMetadata
 import os
 
 from kafka import KafkaConsumer
@@ -102,7 +103,10 @@ class KafkaEventConsumer:
                     # Commit con reintentos
                     for attempt in range(1, self.max_commit_retries + 1):
                         try:
-                            await self.consumer.commit()
+                            
+                            tp = TopicPartition(message.topic, message.partition)
+                            offsets = {tp: OffsetAndMetadata(message.offset + 1, None)}
+                            await self.consumer.commit(offsets=offsets)
                             break
                         except Exception as e:
                             print(f"[!] Commit fallo (intento {attempt}): {e}")
