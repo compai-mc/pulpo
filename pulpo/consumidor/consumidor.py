@@ -44,11 +44,11 @@ class KafkaEventConsumer:
             max_poll_interval_ms=900000,  # 15 minutos (ajustado a tu necesidad real)
             request_timeout_ms=150000,  # 2.5 minutos
             retry_backoff_ms=15000,  # 15s (más generoso)
-            auto_offset_reset="latest",
-            enable_auto_commit=False,
+            auto_offset_reset="earliest",
+            enable_auto_commit=True,
             isolation_level="read_committed",
             metadata_max_age_ms=45000,  # 45s
-            connections_max_idle_ms=1000000,  
+            connections_max_idle_ms=3000000,  
             )
 
         await self.consumer.start()
@@ -103,7 +103,6 @@ class KafkaEventConsumer:
                     # Commit con reintentos
                     for attempt in range(1, self.max_commit_retries + 1):
                         try:
-                            
                             tp = TopicPartition(message.topic, message.partition)
                             offsets = {tp: OffsetAndMetadata(message.offset + 1, None)}
                             await self.consumer.commit(offsets=offsets)
