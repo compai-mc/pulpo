@@ -185,20 +185,23 @@ class GestorTareas:
         await self.producer.publish(TOPIC_TASK, msg)
 
     async def _on_kafka_message(self, message):
-        print("Mensaje recibido en el tópico: ", message.value.decode("utf-8"))
-        #try:
-        data = json.loads(message.value.decode("utf-8"))
-        job_id = data.get("job_id")
-        task_id = data.get("task_id")
-        if job_id and task_id:
-            # Ejecuta SIEMPRE el callback de tarea
-            if self.on_task_complete_callback:
-                await self.on_task_complete_callback(job_id, task_id)
-            # Marca como completada (por si no lo estaba)
-            await self.task_completed(job_id, task_id)
-                # Comprueba si todas las tareas están completas y ejecuta el callback de job
-        #except Exception as e:
-        #    print(f"Error procesando mensaje Kafka: {e}")
+        try:
+            data = json.loads(message.value.decode("utf-8"))
+            job_id = data.get("job_id")
+            task_id = data.get("task_id")
+            if job_id and task_id:
+                if self.on_task_complete_callback:
+                    await self.on_task_complete_callback(job_id, task_id)
+                await self.task_completed(job_id, task_id)
+                job = self.collection.get(job_id)
+                if job and all(t["completed"] for t in job["tasks"].values()):
+                    if self.on_complete_callback:
+                        await self.on_complete_callback(job_id)
+
+        except Exception as e:
+            print(f"[!] Error procesando mensaje offset aqui {message.offset}: {e}")
+            # ⚠️ Importante: aunque falle, hacer commit del offset
+            await self.consumer.commit()
 
     async def task_completed(self, job_id: str, task_id: str):
         print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada...")
