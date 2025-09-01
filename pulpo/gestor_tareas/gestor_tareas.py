@@ -189,6 +189,7 @@ class GestorTareas:
             data = json.loads(message.value.decode("utf-8"))
             job_id = data.get("job_id")
             task_id = data.get("task_id")
+            print(f"[Kafka **************************************************] Mensaje recibido en offset {message.offset}: {data}")
             if job_id and task_id:
                 if self.on_task_complete_callback:
                     await self.on_task_complete_callback(job_id, task_id)
