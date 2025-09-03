@@ -10,10 +10,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from consumidor import KafkaEventConsumer
-from publicador import KafkaEventPublisher
-#from consumidor.consumidor import KafkaEventConsumer
-#from publicador.publicador import KafkaEventPublisher
+#from consumidor import KafkaEventConsumer
+#from publicador import KafkaEventPublisher
+from consumidor.consumidor import KafkaEventConsumer
+from publicador.publicador import KafkaEventPublisher
 
 ARANGO_HOST = os.getenv("ARANGO_HOST", "http://alcazar:8529")
 ARANGO_DB_COMPAI = os.getenv("ARANGO_DB_COMPAI", "compai_db")
