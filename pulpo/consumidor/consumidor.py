@@ -3,9 +3,9 @@ from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
 from aiokafka.structs import TopicPartition, OffsetAndMetadata
 import os
 
-from kafka import KafkaConsumer
-from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
-from kafka.structs import TopicPartition
+#from kafka import KafkaConsumer
+#from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
+#from kafka.structs import TopicPartition
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
@@ -45,7 +45,7 @@ class KafkaEventConsumer:
             request_timeout_ms=150000,  # 2.5 minutos
             retry_backoff_ms=15000,  # 15s (más generoso)
             auto_offset_reset="earliest",
-            enable_auto_commit=True,
+            enable_auto_commit=False,
             isolation_level="read_committed",
             metadata_max_age_ms=45000,  # 45s
             connections_max_idle_ms=3000000,  
@@ -104,7 +104,7 @@ class KafkaEventConsumer:
                     for attempt in range(1, self.max_commit_retries + 1):
                         try:
                             tp = TopicPartition(message.topic, message.partition)
-                            offsets = {tp: OffsetAndMetadata(message.offset + 1, None)}
+                            offsets = {tp: OffsetAndMetadata(message.offset + 1, "procesado")}
                             await self.consumer.commit(offsets=offsets)
                             break
                         except Exception as e:
@@ -116,7 +116,7 @@ class KafkaEventConsumer:
                 except asyncio.TimeoutError:
                     print(f"[!] Timeout procesando mensaje offset {message.offset}")
                 except Exception as e:
-                    print(f"[!] Error procesando mensaje offset {message.offset}: {e}")
+                    print(f"[!] Error procesando mensaje offset {message.offset} en el worker: {e}")
                 finally:
                     self.queue.task_done()
             except asyncio.CancelledError:

@@ -10,8 +10,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from consumidor.consumidor import KafkaEventConsumer
-from publicador.publicador import KafkaEventPublisher
+from consumidor import KafkaEventConsumer
+from publicador import KafkaEventPublisher
+#from consumidor.consumidor import KafkaEventConsumer
+#from publicador.publicador import KafkaEventPublisher
 
 ARANGO_HOST = os.getenv("ARANGO_HOST", "http://alcazar:8529")
 ARANGO_DB_COMPAI = os.getenv("ARANGO_DB_COMPAI", "compai_db")
@@ -179,6 +181,7 @@ class GestorTareas:
 
         self.collection.update(job)  
         return True
+    
 
 
     async def _publicar_tarea(self, msg: dict):
@@ -187,28 +190,31 @@ class GestorTareas:
     async def _on_kafka_message(self, message):
         try:
             data = json.loads(message.value.decode("utf-8"))
+            print(data)
             job_id = data.get("job_id")
             task_id = data.get("task_id")
             print(f"[Kafka **************************************************] Mensaje recibido en offset {message.offset}: {data}")
             if job_id and task_id:
                 if self.on_task_complete_callback:
                     await self.on_task_complete_callback(job_id, task_id)
+                print(f"Terminado callback: job_id={job_id}, tipo={type(job_id)}")
                 await self.task_completed(job_id, task_id)
+                print("Terminado el marcado de tarea como completada")
                 job = self.collection.get(job_id)
                 if job and all(t["completed"] for t in job["tasks"].values()):
                     if self.on_complete_callback:
                         await self.on_complete_callback(job_id)
 
         except Exception as e:
-            print(f"[!] Error procesando mensaje offset aqui {message.offset}: {e}")
+            print(f"[!] Error procesando mensaje offset {message.offset}: {e} en on_kafka")
             # ⚠️ Importante: aunque falle, hacer commit del offset
-            await self.consumer.commit()
+            #await self.consumer.consumer.commit()
 
     async def task_completed(self, job_id: str, task_id: str):
-        print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada...")
+        print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada.")
         print([col["name"] for col in self.db.collections()])
         job = self.collection.get(job_id)
-        print(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...")
+        print(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...  Ahora: {job["tasks"][task_id]["completed"]}")
         if not job:
             print(f"[!] Job '{job_id}' no encontrado")
             return {"error": "Job no encontrado"}
@@ -216,6 +222,10 @@ class GestorTareas:
         if task_id not in job["tasks"]:
             print(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
             return {"error": "Tarea no encontrada en el job"}
+        
+        if job["tasks"][task_id]["completed"]:
+            print(f"[!] Tarea '{task_id}' del job '{job_id}' ya estaba marcada como completada")
+            return {"status": "completed", "message": f"Tarea '{task_id}' del job '{job_id}' ya estaba completada"}    
 
         job["tasks"][task_id]["completed"] = True
         print(f"[✔] Tarea '{task_id}' actualizandose en BBDD en job '{job_id}'")
