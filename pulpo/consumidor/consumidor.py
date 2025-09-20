@@ -122,38 +122,25 @@ class KafkaEventConsumer:
             except asyncio.CancelledError:
                 break
 
-    def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-        """
-        Versión síncrona para leer un offset específico.
-        """
+
+async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+    tp = TopicPartition(self.topic, partition)
+    consumer = AIOKafkaConsumer(
+        bootstrap_servers=KAFKA_BROKER,
+        group_id=None,  # aquí sin grupo, es lectura directa
+        enable_auto_commit=False,
+    )
+    await consumer.start()
+    try:
+        await consumer.assign([tp])
+        await consumer.seek(tp, offset)
+
         try:
-            consumer = KafkaConsumer(
-                bootstrap_servers=KAFKA_BROKER,
-                group_id=self.id_grupo,
-                enable_auto_commit=False,
-                auto_offset_reset="none",
-                consumer_timeout_ms=timeout_ms
-            )
-
-            # Asignar partición y buscar offset
-            tp = TopicPartition(self.topic, partition)
-            consumer.assign([tp])
-            consumer.seek(tp, offset)
-
-            # Leer mensaje (bloqueante hasta timeout_ms)
-            for msg in consumer:
-                if msg.offset == offset:
-                    return msg
-                elif msg.offset > offset:
-                    break  # Pasamos el offset buscado
-
+            msg = await asyncio.wait_for(consumer.getone(), timeout=timeout_ms/1000)
+            if msg.offset == offset:
+                return msg
             return None
-
-        except NoBrokersAvailable:
-            raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
-        except KafkaTimeoutError:
-            raise RuntimeError(f"Timeout al leer offset {offset}")
-        finally:
-            if consumer:
-                consumer.close()
-
+        except asyncio.TimeoutError:
+            return None
+    finally:
+        await consumer.stop()
