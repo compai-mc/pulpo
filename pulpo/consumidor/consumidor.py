@@ -123,24 +123,24 @@ class KafkaEventConsumer:
                 break
 
 
-async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-    tp = TopicPartition(self.topic, partition)
-    consumer = AIOKafkaConsumer(
-        bootstrap_servers=KAFKA_BROKER,
-        group_id=None,  # aquí sin grupo, es lectura directa
-        enable_auto_commit=False,
-    )
-    await consumer.start()
-    try:
-        await consumer.assign([tp])
-        await consumer.seek(tp, offset)
-
+    async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        tp = TopicPartition(self.topic, partition)
+        consumer = AIOKafkaConsumer(
+            bootstrap_servers=KAFKA_BROKER,
+            group_id=None,  # aquí sin grupo, es lectura directa
+            enable_auto_commit=False,
+        )
+        await consumer.start()
         try:
-            msg = await asyncio.wait_for(consumer.getone(), timeout=timeout_ms/1000)
-            if msg.offset == offset:
-                return msg
-            return None
-        except asyncio.TimeoutError:
-            return None
-    finally:
-        await consumer.stop()
+            await consumer.assign([tp])
+            await consumer.seek(tp, offset)
+
+            try:
+                msg = await asyncio.wait_for(consumer.getone(), timeout=timeout_ms/1000)
+                if msg.offset == offset:
+                    return msg
+                return None
+            except asyncio.TimeoutError:
+                return None
+        finally:
+            await consumer.stop()
