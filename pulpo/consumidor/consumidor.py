@@ -1,6 +1,8 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
 from aiokafka.structs import TopicPartition, OffsetAndMetadata
+from kafka import KafkaConsumer, TopicPartition
+from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
 
 #from kafka import KafkaConsumer
@@ -123,24 +125,48 @@ class KafkaEventConsumer:
                 break
 
 
-    async def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-        tp = TopicPartition(self.topic, partition)
-        consumer = AIOKafkaConsumer(
-            bootstrap_servers=KAFKA_BROKER,
-            group_id=None,  # aquí sin grupo, es lectura directa
-            enable_auto_commit=False,
-        )
-        await consumer.start()
-        try:
-            await consumer.assign([tp])
-            await consumer.seek(tp, offset)
 
-            try:
-                msg = await asyncio.wait_for(consumer.getone(), timeout=timeout_ms/1000)
-                if msg.offset == offset:
-                    return msg
-                return None
-            except asyncio.TimeoutError:
-                return None
-        finally:
-            await consumer.stop()
+
+def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+    """
+    Versión síncrona para leer un offset específico.
+    """
+    consumer = None
+    try:
+        consumer = KafkaConsumer(
+            bootstrap_servers=KAFKA_BROKER,
+            group_id=self.id_grupo,
+            enable_auto_commit=False,
+            auto_offset_reset="none",
+            consumer_timeout_ms=timeout_ms
+        )
+
+        tp = TopicPartition(self.topic, partition)
+
+        # Validar que la partición existe
+        partitions = consumer.partitions_for_topic(self.topic)
+        if partitions is None:
+            raise RuntimeError(f"El topic '{self.topic}' no existe en el broker {KAFKA_BROKER}")
+        if partition not in partitions:
+            raise RuntimeError(f"La partición {partition} no existe en el topic '{self.topic}'")
+
+        consumer.assign([tp])
+        consumer.seek(tp, offset)
+
+        for msg in consumer:
+            if msg.offset == offset:
+                return msg
+            elif msg.offset > offset:
+                break  
+
+        return None
+
+    except NoBrokersAvailable:
+        raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
+    except KafkaTimeoutError:
+        raise RuntimeError(f"Timeout al leer offset {offset}")
+    except KafkaError as e:
+        raise RuntimeError(f"Error de Kafka: {e}")
+    finally:
+        if consumer is not None:
+            consumer.close()
