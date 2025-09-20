@@ -125,48 +125,46 @@ class KafkaEventConsumer:
                 break
 
 
+    def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        """
+        Versión síncrona para leer un offset específico.
+        """
+        consumer = None
+        try:
+            consumer = KafkaConsumer(
+                bootstrap_servers=KAFKA_BROKER,
+                group_id=self.id_grupo,
+                enable_auto_commit=False,
+                auto_offset_reset="none",
+                consumer_timeout_ms=timeout_ms
+            )
 
+            tp = TopicPartition(self.topic, partition)
 
-def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-    """
-    Versión síncrona para leer un offset específico.
-    """
-    consumer = None
-    try:
-        consumer = KafkaConsumer(
-            bootstrap_servers=KAFKA_BROKER,
-            group_id=self.id_grupo,
-            enable_auto_commit=False,
-            auto_offset_reset="none",
-            consumer_timeout_ms=timeout_ms
-        )
+            # Validar que la partición existe
+            partitions = consumer.partitions_for_topic(self.topic)
+            if partitions is None:
+                raise RuntimeError(f"El topic '{self.topic}' no existe en el broker {KAFKA_BROKER}")
+            if partition not in partitions:
+                raise RuntimeError(f"La partición {partition} no existe en el topic '{self.topic}'")
 
-        tp = TopicPartition(self.topic, partition)
+            consumer.assign([tp])
+            consumer.seek(tp, offset)
 
-        # Validar que la partición existe
-        partitions = consumer.partitions_for_topic(self.topic)
-        if partitions is None:
-            raise RuntimeError(f"El topic '{self.topic}' no existe en el broker {KAFKA_BROKER}")
-        if partition not in partitions:
-            raise RuntimeError(f"La partición {partition} no existe en el topic '{self.topic}'")
+            for msg in consumer:
+                if msg.offset == offset:
+                    return msg
+                elif msg.offset > offset:
+                    break  
 
-        consumer.assign([tp])
-        consumer.seek(tp, offset)
+            return None
 
-        for msg in consumer:
-            if msg.offset == offset:
-                return msg
-            elif msg.offset > offset:
-                break  
-
-        return None
-
-    except NoBrokersAvailable:
-        raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
-    except KafkaTimeoutError:
-        raise RuntimeError(f"Timeout al leer offset {offset}")
-    except KafkaError as e:
-        raise RuntimeError(f"Error de Kafka: {e}")
-    finally:
-        if consumer is not None:
-            consumer.close()
+        except NoBrokersAvailable:
+            raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
+        except KafkaTimeoutError:
+            raise RuntimeError(f"Timeout al leer offset {offset}")
+        except KafkaError as e:
+            raise RuntimeError(f"Error de Kafka: {e}")
+        finally:
+            if consumer is not None:
+                consumer.close()
