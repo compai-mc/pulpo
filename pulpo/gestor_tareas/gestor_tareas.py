@@ -273,6 +273,18 @@ class GestorTareas:
             if not all(t["completed"] for t in job["tasks"].values()):
                 return False
         return True
+    
+    def by_status(self):
+        AQL = 'FOR j IN @@col FILTER !HAS(j,"end_time") || j.end_time==null COLLECT s = j.status WITH COUNT INTO c RETURN {status:s, count:c}'
+        db = ArangoClient(hosts=ARANGO_HOST).db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
+        cur = db.aql.execute(AQL, bind_vars={"@col": ARANGO_COLLECTION})
+        return {"ok": True, "source": "arango", "items": list(cur)}
+
+    def active_ids(self):
+        AQL = 'FOR j IN @@col FILTER (!HAS(j,"end_time") || j.end_time==null) RETURN j._key'
+        db = ArangoClient(hosts=ARANGO_HOST).db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
+        cur = db.aql.execute(AQL, bind_vars={"@col": ARANGO_COLLECTION})
+        return {"ok": True, "ids": list(cur)}
 
 ########################################
 # Para pruebas y demostración
