@@ -45,8 +45,8 @@ class GestorTareas:
         self.client = ArangoClient(hosts=ARANGO_HOST)
         self.db = self.client.db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
         
-        print(f"[INFO] Conectado a DB: {self.db.name}")
-        print("[INFO] Colecciones disponibles:", [c["name"] for c in self.db.collections()])
+        #print(f"[INFO] Conectado a DB: {self.db.name}")
+        #print("[INFO] Colecciones disponibles:", [c["name"] for c in self.db.collections()])
 
         if not self.db.has_collection(ARANGO_COLLECTION):
             raise RuntimeError(f"La colección {ARANGO_COLLECTION} no existe en la DB {ARANGO_DB_COMPAI}")
@@ -133,7 +133,7 @@ class GestorTareas:
             return False
         job["tasks"][task_id].update(updates)
         self.collection.update(job)
-        print(f"[✔] Tarea '{task_id}' del job '{job_id}' actualizada con {updates}")
+        print(f"[✔] Tarea '{task_id}' del job '{job_id}' actualizada")
         return True
     
     def update_job(self, job_id: str, updates: dict):
@@ -144,7 +144,7 @@ class GestorTareas:
 
         job.update(updates)
         self.collection.update(job)
-        print(f"[✔] Job '{job_id}' actualizado con {updates}")
+        print(f"[✔] Job '{job_id}' actualizado")
         return True
 
     
@@ -190,16 +190,15 @@ class GestorTareas:
     async def _on_kafka_message(self, message):
         try:
             data = json.loads(message.value.decode("utf-8"))
-            print(data)
             job_id = data.get("job_id")
             task_id = data.get("task_id")
-            print(f"[Kafka **************************************************] Mensaje recibido en offset {message.offset}: {data}")
+            print(f"[Kafka] Mensaje recibido en offset {message.offset}: {data}")
             if job_id and task_id:
                 if self.on_task_complete_callback:
                     await self.on_task_complete_callback(job_id, task_id)
                 print(f"Terminado callback: job_id={job_id}, tipo={type(job_id)}")
                 await self.task_completed(job_id, task_id)
-                print("Terminado el marcado de tarea como completada")
+                print(f"Marcado de tarea como completada: job_id={job_id}, tipo={type(job_id)}")
                 job = self.collection.get(job_id)
                 if job and all(t["completed"] for t in job["tasks"].values()):
                     if self.on_complete_callback:
@@ -228,7 +227,6 @@ class GestorTareas:
             return {"status": "completed", "message": f"Tarea '{task_id}' del job '{job_id}' ya estaba completada"}    
 
         job["tasks"][task_id]["completed"] = True
-        print(f"[✔] Tarea '{task_id}' actualizandose en BBDD en job '{job_id}'")
         self.collection.update(job)
         print(f"[✔] Tarea '{task_id}' completada en job '{job_id}'")
 
