@@ -42,12 +42,14 @@ class Logueador:
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    log = Logueador(fichero="log/app.log", nivel="INFO")
+    log = Logueador(fichero="app/log/xxx.log", nivel="INFO")
 
     def prueba():
         log.logger.info("Mensaje inicial 🙂")
 
     prueba()
+
+    exit()
 
     log.set_log_level("DEBUG")
     log.logger.debug("Ahora en DEBUG")
