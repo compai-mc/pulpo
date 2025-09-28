@@ -1,19 +1,56 @@
 # logueador.py
 import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="📌 %(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(funcName)s(): \n %(message)s",
-    filename="log/app.log",   # Si no pones filename, sale por consola
-    filemode="a"          # 'a' para append, 'w' para sobreescribir
-)
 
-logger = logging.getLogger("mi_app")
+class Logueador:
+    def __init__(self, nombre="mi_app", fichero="app/log/app.log", nivel="INFO"):
+        self.logger = logging.getLogger(nombre)
+        self._configurar(fichero, nivel)
 
-def set_log_level(level_name: str):
-    """Cambia el nivel de logging en tiempo de ejecución."""
-    level = getattr(logging, level_name.upper(), None)
-    if not isinstance(level, int):
-        raise ValueError(f"Nivel de log no válido: {level_name}")
-    logger.setLevel(level)
-    logger.info(f"Nivel de log cambiado a {level_name.upper()}")
+    def _configurar(self, fichero, nivel):
+        """Configura el logger con fichero y nivel inicial."""
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
+
+        nivel_int = getattr(logging, nivel.upper(), logging.INFO)
+
+        handler = logging.FileHandler(fichero, mode="a", encoding="utf-8")
+        formatter = logging.Formatter(
+            "📌 %(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(funcName)s():\n %(message)s"
+        )
+        handler.setFormatter(formatter)
+
+        self.logger.addHandler(handler)
+        self.logger.setLevel(nivel_int)
+
+        self.fichero = fichero
+
+    def set_log_level(self, level_name: str):
+        """Cambia el nivel de logging en tiempo de ejecución."""
+        level = getattr(logging, level_name.upper(), None)
+        if not isinstance(level, int):
+            raise ValueError(f"Nivel de log no válido: {level_name}")
+        self.logger.setLevel(level)
+        self.logger.info(f"Nivel de log cambiado a {level_name.upper()}")
+
+    def set_log_file(self, fichero: str):
+        """Cambia el fichero de log en tiempo de ejecución."""
+        current_level = logging.getLevelName(self.logger.level)
+        self._configurar(fichero, current_level)
+        self.logger.info(f"Cambiado el fichero de log a {fichero}")
+
+
+# Ejemplo de uso
+if __name__ == "__main__":
+    log = Logueador(fichero="log/app.log", nivel="INFO")
+
+    def prueba():
+        log.logger.info("Mensaje inicial 🙂")
+
+    prueba()
+
+    log.set_log_level("DEBUG")
+    log.logger.debug("Ahora en DEBUG")
+
+    log.set_log_file("log/otro.log")
+    log.logger.info("Este mensaje va al nuevo fichero")
