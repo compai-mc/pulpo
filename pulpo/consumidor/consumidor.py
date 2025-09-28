@@ -4,7 +4,7 @@ from aiokafka.structs import TopicPartition, OffsetAndMetadata
 from kafka import KafkaConsumer, TopicPartition
 from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
-from ..logueador import log
+from pulpo.logueador import log
 
 #from kafka import KafkaConsumer
 #from kafka.errors import NoBrokersAvailable, KafkaTimeoutError

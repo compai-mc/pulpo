@@ -4,7 +4,7 @@ import json
 import asyncio
 import os
 
-from ..logueador import log
+from pulpo.logueador import log
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
