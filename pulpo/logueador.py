@@ -59,6 +59,11 @@ class Logueador:
         self.logger.critical(msg, *args, stacklevel=2, **kwargs)
 
 
+
+#Inicialización del logueador
+log=Logueador()
+
+
 # Ejemplo de uso
 if __name__ == "__main__":
     log = Logueador(fichero="app/log/xxx.log", nivel="INFO")
