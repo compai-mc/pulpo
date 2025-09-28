@@ -1,11 +1,12 @@
-# logger.py
+# logueador.py
 import logging
 
 logging.basicConfig(
     level=logging.INFO,
-    format="📌 %(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(funcName)s(): /n %(message)s"
+    format="📌 %(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(funcName)s(): \n %(message)s",
+    filename="log/app.log",   # Si no pones filename, sale por consola
+    filemode="a"          # 'a' para append, 'w' para sobreescribir
 )
-
 
 logger = logging.getLogger("mi_app")
 
