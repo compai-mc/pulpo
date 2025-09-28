@@ -22,8 +22,10 @@ class Logueador:
 
         self.logger.addHandler(handler)
         self.logger.setLevel(nivel_int)
+        self.logger.propagate = False
 
         self.fichero = fichero
+        
 
     def set_log_level(self, level_name: str):
         """Cambia el nivel de logging en tiempo de ejecución."""
@@ -62,14 +64,13 @@ if __name__ == "__main__":
     log = Logueador(fichero="app/log/xxx.log", nivel="INFO")
 
     def prueba():
-        log.logger.info("Mensaje inicial 🙂")
+        log.info("Mensaje inicial 🙂")
 
     prueba()
 
-    exit()
 
     log.set_log_level("DEBUG")
-    log.logger.debug("Ahora en DEBUG")
+    log.debug("Ahora en DEBUG")
 
-    log.set_log_file("log/otro.log")
-    log.logger.info("Este mensaje va al nuevo fichero")
+    #log.set_log_file("log/otro.log")
+    #log.info("Este mensaje va al nuevo fichero")
