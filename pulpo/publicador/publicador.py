@@ -4,6 +4,8 @@ import json
 import asyncio
 import os
 
+from ..logueador import log
+
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
 async def crear_topico(kafka_broker: str, topic_name: str, num_particiones: int = 1, replication_factor: int = 1) -> bool:
@@ -23,7 +25,7 @@ async def crear_topico(kafka_broker: str, topic_name: str, num_particiones: int 
         # Verificar si el tópico ya existe
         cluster_metadata = admin_client.list_topics(timeout=5)
         if topic_name in cluster_metadata.topics:
-            print(f"El tópico '{topic_name}' ya existe.")
+            log.warning(f"El tópico '{topic_name}' ya existe.")
             return False  # Ya existía
 
         # Crear el tópico
@@ -33,10 +35,10 @@ async def crear_topico(kafka_broker: str, topic_name: str, num_particiones: int 
         # Esperar la respuesta de Kafka
         result = await asyncio.to_thread(fs[topic_name].result)
 
-        print(f"Tópico '{topic_name}' creado correctamente.")
+        log.debug(f"Tópico '{topic_name}' creado correctamente.")
         return True  # Se creó correctamente
     except Exception as e:
-        print(f"Error al crear el tópico '{topic_name}': {e}")
+        log.error(f"Error al crear el tópico '{topic_name}': {e}")
         return False  # Error al crear
 
 class KafkaEventPublisher:
@@ -83,7 +85,7 @@ class KafkaEventPublisher:
 
         message_str = json.dumps(message)
         await self.producer.send_and_wait(topic, message_str.encode('utf-8'))
-        print(f"Mensaje publicado en el tópico '{topic}': {message}")
+        log.debug(f"Mensaje publicado en el tópico '{topic}': {message}")
 
     async def publish_commit(self, topic: str, message: dict):
         """Detiene el productor de Kafka."""

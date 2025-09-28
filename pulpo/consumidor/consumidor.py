@@ -4,6 +4,7 @@ from aiokafka.structs import TopicPartition, OffsetAndMetadata
 from kafka import KafkaConsumer, TopicPartition
 from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
+from ..logueador import log
 
 #from kafka import KafkaConsumer
 #from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
@@ -84,7 +85,7 @@ class KafkaEventConsumer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[!] Error en el loop de consumo: {e}. Reintentando en 10s...")
+                log.error(f"[!] Error en el loop de consumo: {e}. Reintentando en 10s...")
                 await asyncio.sleep(10)
                 await self._reconnect()
 
@@ -110,15 +111,15 @@ class KafkaEventConsumer:
                             await self.consumer.commit(offsets=offsets)
                             break
                         except Exception as e:
-                            print(f"[!] Commit fallo (intento {attempt}): {e}")
+                            log.error(f"[!] Commit fallo (intento {attempt}): {e}")
                             if attempt == self.max_commit_retries:
-                                print(f"[!] Commit final fallido para offset {message.offset}")
+                                log.error(f"[!] Commit final fallido para offset {message.offset}")
                             else:
                                 await asyncio.sleep(2 ** attempt)  # backoff exponencial
                 except asyncio.TimeoutError:
-                    print(f"[!] Timeout procesando mensaje offset {message.offset}")
+                    log.error(f"[!] Timeout procesando mensaje offset {message.offset}")
                 except Exception as e:
-                    print(f"[!] Error procesando mensaje offset {message.offset} en el worker: {e}")
+                    log.error(f"[!] Error procesando mensaje offset {message.offset} en el worker: {e}")
                 finally:
                     self.queue.task_done()
             except asyncio.CancelledError:
