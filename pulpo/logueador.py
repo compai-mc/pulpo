@@ -40,6 +40,23 @@ class Logueador:
         self.logger.info(f"Cambiado el fichero de log a {fichero}")
 
 
+    # Métodos de conveniencia para usar log.debug(), log.info(), etc.
+    def debug(self, msg, *args, **kwargs):
+        self.logger.debug(msg, *args, **kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        self.logger.info(msg, *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        self.logger.warning(msg, *args, **kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        self.logger.error(msg, *args, **kwargs)
+
+    def critical(self, msg, *args, **kwargs):
+        self.logger.critical(msg, *args, **kwargs)
+
+
 # Ejemplo de uso
 if __name__ == "__main__":
     log = Logueador(fichero="app/log/xxx.log", nivel="INFO")
