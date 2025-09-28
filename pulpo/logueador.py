@@ -42,19 +42,19 @@ class Logueador:
 
     # Métodos de conveniencia para usar log.debug(), log.info(), etc.
     def debug(self, msg, *args, **kwargs):
-        self.logger.debug(msg, *args, **kwargs)
+        self.logger.debug(msg, *args, stacklevel=2, **kwargs)
 
     def info(self, msg, *args, **kwargs):
-        self.logger.info(msg, *args, **kwargs)
+        self.logger.info(msg, *args, stacklevel=2, **kwargs)
 
     def warning(self, msg, *args, **kwargs):
-        self.logger.warning(msg, *args, **kwargs)
+        self.logger.warning(msg, *args, stacklevel=2, **kwargs)
 
     def error(self, msg, *args, **kwargs):
-        self.logger.error(msg, *args, **kwargs)
+        self.logger.error(msg, *args, stacklevel=2, **kwargs)
 
     def critical(self, msg, *args, **kwargs):
-        self.logger.critical(msg, *args, **kwargs)
+        self.logger.critical(msg, *args, stacklevel=2, **kwargs)
 
 
 # Ejemplo de uso
