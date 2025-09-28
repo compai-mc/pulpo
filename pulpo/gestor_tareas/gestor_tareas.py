@@ -5,7 +5,8 @@ from arango import ArangoClient
 import os
 import sys
 from pathlib import Path 
-from logueador import log
+
+from ..logueador import log
 
 # Añadir el directorio raíz del proyecto al path de Python
 project_root = Path(__file__).parent.parent
