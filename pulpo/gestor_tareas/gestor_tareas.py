@@ -5,6 +5,7 @@ from arango import ArangoClient
 import os
 import sys
 from pathlib import Path 
+from logueador import log
 
 # Añadir el directorio raíz del proyecto al path de Python
 project_root = Path(__file__).parent.parent
@@ -76,7 +77,7 @@ class GestorTareas:
             try:
                 await self.consumer.stop()
             except Exception as e:
-                print(f"[!] Problema al parar consumer Kafka: {e}")
+                log.error(f"[!] Problema al parar consumer Kafka: {e}")
         await self.producer.stop()
 
     async def add_job(self, tasks: list[dict], job_id: str = None):
@@ -111,7 +112,7 @@ class GestorTareas:
             self.collection.insert(doc)
             nuevas_tareas = tasks  # Todas son nuevas
 
-        print(f"Job '{job_id}' actualizado/creado con tareas: {[task['task_id'] for task in nuevas_tareas]}")
+        log.info(f"Job '{job_id}' actualizado/creado con tareas: {[task['task_id'] for task in nuevas_tareas]}")
 
         # Publicar inicio de tareas SOLO para las nuevas
         tasks_msgs = []
@@ -129,22 +130,22 @@ class GestorTareas:
     def update_task(self, job_id: str, task_id: str, updates: dict):
         job = self.collection.get(job_id)
         if not job or task_id not in job["tasks"]:
-            print(f"[!] No se encontró la tarea '{task_id}' en el job '{job_id}'")
+            log.error(f"[!] No se encontró la tarea '{task_id}' en el job '{job_id}'")
             return False
         job["tasks"][task_id].update(updates)
         self.collection.update(job)
-        print(f"[✔] Tarea '{task_id}' del job '{job_id}' actualizada")
+        log.info(f"[✔] Tarea '{task_id}' del job '{job_id}' actualizada")
         return True
     
     def update_job(self, job_id: str, updates: dict):
         job = self.collection.get(job_id)
         if not job:
-            print(f"[!] No se encontró el job '{job_id}'")
+            log.error(f"[!] No se encontró el job '{job_id}'")
             return False
 
         job.update(updates)
         self.collection.update(job)
-        print(f"[✔] Job '{job_id}' actualizado")
+        log.info(f"[✔] Job '{job_id}' actualizado")
         return True
 
     
@@ -192,43 +193,42 @@ class GestorTareas:
             data = json.loads(message.value.decode("utf-8"))
             job_id = data.get("job_id")
             task_id = data.get("task_id")
-            print(f"[Kafka] Mensaje recibido en offset {message.offset}: {data}")
+            log.info(f"[Kafka] Mensaje recibido en offset {message.offset}: {data}")
             if job_id and task_id:
                 if self.on_task_complete_callback:
                     await self.on_task_complete_callback(job_id, task_id)
-                print(f"Terminado callback: job_id={job_id}, tipo={type(job_id)}")
+                log.debug(f"Terminado callback: job_id={job_id}, tipo={type(job_id)}")
                 await self.task_completed(job_id, task_id)
-                print(f"Marcado de tarea como completada: job_id={job_id}, tipo={type(job_id)}")
+                log.debug(f"Marcado de tarea como completada: job_id={job_id}, tipo={type(job_id)}")
                 job = self.collection.get(job_id)
                 if job and all(t["completed"] for t in job["tasks"].values()):
                     if self.on_complete_callback:
                         await self.on_complete_callback(job_id)
 
         except Exception as e:
-            print(f"[!] Error procesando mensaje offset {message.offset}: {e} en on_kafka")
+            log.error(f"[!] Error procesando mensaje offset {message.offset}: {e} en on_kafka")
             # ⚠️ Importante: aunque falle, hacer commit del offset
             #await self.consumer.consumer.commit()
 
     async def task_completed(self, job_id: str, task_id: str):
-        print(f"Marcando tarea '{task_id}' del job '{job_id}' como completada.")
-        print([col["name"] for col in self.db.collections()])
+        log.info(f"Marcando tarea '{task_id}' del job '{job_id}' como completada.")
+        log.debug([col["name"] for col in self.db.collections()])
         job = self.collection.get(job_id)
-        print(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...  Ahora: {job["tasks"][task_id]["completed"]}")
+        log.debug(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...  Ahora: {job["tasks"][task_id]["completed"]}")
         if not job:
-            print(f"[!] Job '{job_id}' no encontrado")
+            log.error(f"[!] Job '{job_id}' no encontrado")
             return {"error": "Job no encontrado"}
 
         if task_id not in job["tasks"]:
-            print(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
+            log.error(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
             return {"error": "Tarea no encontrada en el job"}
         
         if job["tasks"][task_id]["completed"]:
-            print(f"[!] Tarea '{task_id}' del job '{job_id}' ya estaba marcada como completada")
             return {"status": "completed", "message": f"Tarea '{task_id}' del job '{job_id}' ya estaba completada"}    
 
         job["tasks"][task_id]["completed"] = True
         self.collection.update(job)
-        print(f"[✔] Tarea '{task_id}' completada en job '{job_id}'")
+        log.info(f"[✔] Tarea '{task_id}' completada en job '{job_id}'")
 
         # ✅ Publicar evento de finalización de tarea
         await self.producer.publish(TOPIC_END_TASK, {
@@ -243,10 +243,10 @@ class GestorTareas:
             await self.on_task_complete_callback(job_id, task_id)
 
         # Si todas las tareas del job están completas
-        for t in job["tasks"].values():  print(f"{t}\n")
+        #for t in job["tasks"].values():  print(f"{t}\n")
 
         if all(t["completed"] for t in job["tasks"].values()):
-            print(f"[🎉] Job '{job_id}' completado")
+            log.info(f"[🎉] Job '{job_id}' completado")
             if self.on_complete_callback:
                 await self.on_complete_callback(job_id)
 
@@ -257,7 +257,7 @@ class GestorTareas:
             })
 
             if self._all_jobs_completed():
-                print("[🎉] Todos los jobs completados")
+                log.info("[🎉] Todos los jobs completados")
                 if self.on_all_complete_callback:
                     await self.on_all_complete_callback()
 
