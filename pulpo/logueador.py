@@ -3,8 +3,9 @@ import logging
 
 
 class Logueador:
-    def __init__(self, nombre=__name__):
+    def __init__(self, nombre=__name__, propagate = False):
         self.logger = logging.getLogger(nombre)
+        self.logger.propagate = propagate
 
     def configurar(self, fichero, nivel):
         """Configura el logger con fichero y nivel inicial."""
@@ -21,7 +22,6 @@ class Logueador:
 
         self.logger.addHandler(handler)
         self.logger.setLevel(nivel_int)
-        self.logger.propagate = False
 
         self.fichero = fichero
 
