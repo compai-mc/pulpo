@@ -3,8 +3,10 @@ import logging
 
 
 class Logueador:
-    def __init__(self, nombre=__name__, propagate = False):
+    def __init__(self, nombre=__name__):
         self.logger = logging.getLogger(nombre)
+
+    def set_propagate(self, propagate: bool) :
         self.logger.propagate = propagate
 
     def configurar(self, fichero, nivel):
