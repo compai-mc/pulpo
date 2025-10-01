@@ -3,11 +3,10 @@ import logging
 
 
 class Logueador:
-    def __init__(self, nombre="mi_app", fichero="app/log/app.log", nivel="INFO"):
+    def __init__(self, nombre=__name__):
         self.logger = logging.getLogger(nombre)
-        self._configurar(fichero, nivel)
 
-    def _configurar(self, fichero, nivel):
+    def configurar(self, fichero, nivel):
         """Configura el logger con fichero y nivel inicial."""
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
@@ -25,7 +24,6 @@ class Logueador:
         self.logger.propagate = False
 
         self.fichero = fichero
-        
 
     def set_log_level(self, level_name: str):
         """Cambia el nivel de logging en tiempo de ejecución."""
@@ -38,11 +36,10 @@ class Logueador:
     def set_log_file(self, fichero: str):
         """Cambia el fichero de log en tiempo de ejecución."""
         current_level = logging.getLevelName(self.logger.level)
-        self._configurar(fichero, current_level)
+        self.configurar(fichero, current_level)
         self.logger.info(f"Cambiado el fichero de log a {fichero}")
 
-
-    # Métodos de conveniencia para usar log.debug(), log.info(), etc.
+    # Métodos de conveniencia
     def debug(self, msg, *args, **kwargs):
         self.logger.debug(msg, *args, stacklevel=2, **kwargs)
 
@@ -59,23 +56,18 @@ class Logueador:
         self.logger.critical(msg, *args, stacklevel=2, **kwargs)
 
 
-
-#Inicialización del logueador
-log=Logueador()
-
-
 # Ejemplo de uso
 if __name__ == "__main__":
-    log = Logueador(fichero="app/log/xxx.log", nivel="INFO")
+    log = Logueador("MiApp")
+    log.configurar("app/log/xxx.log", "INFO")
 
     def prueba():
         log.info("Mensaje inicial 🙂")
 
     prueba()
 
-
     log.set_log_level("DEBUG")
     log.debug("Ahora en DEBUG")
 
-    #log.set_log_file("log/otro.log")
-    #log.info("Este mensaje va al nuevo fichero")
+    # log.set_log_file("app/log/otro.log")
+    # log.info("Este mensaje va al nuevo fichero")
