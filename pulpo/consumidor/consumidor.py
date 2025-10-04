@@ -5,10 +5,7 @@ from kafka import KafkaConsumer, TopicPartition
 from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
 from pulpo.logueador import log
-
-#from kafka import KafkaConsumer
-#from kafka.errors import NoBrokersAvailable, KafkaTimeoutError
-#from kafka.structs import TopicPartition
+import uuid
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
@@ -35,34 +32,96 @@ class KafkaEventConsumer:
         self.workers = []
         self.queue = asyncio.Queue()
 
-    async def start(self, broker=KAFKA_BROKER):
 
+    async def start(
+        self,
+        broker: str = KAFKA_BROKER,
+        auto_offset_reset: str = "earliest",
+        enable_auto_commit: bool = False,
+        auto_commit_interval_ms: int = 5000,
+        group_id: str = None,
+        group_instance_id: str = None,
+        max_partition_fetch_bytes: int = 1048576,  # 1 MB por partición
+        fetch_max_bytes: int = 52428800,           # 50 MB total
+        fetch_min_bytes: int = 1,
+        fetch_max_wait_ms: int = 500,
+        session_timeout_ms: int = 30000,           # 30s
+        heartbeat_interval_ms: int = 10000,        # 10s
+        max_poll_interval_ms: int = 300000,        # 5 minutos
+        request_timeout_ms: int = 40000,           # 40s
+        retry_backoff_ms: int = 100,               # espera mínima entre reintentos
+        connections_max_idle_ms: int = 540000,     # 9 minutos
+        isolation_level: str = "read_committed",
+        metadata_max_age_ms: int = 300000,         # 5 min para refrescar metadatos
+        check_crcs: bool = True,
+        api_version: str | None = None,
+        security_protocol: str = "PLAINTEXT",
+        ssl_context=None,
+        sasl_mechanism: str | None = None,
+        sasl_plain_username: str | None = None,
+        sasl_plain_password: str | None = None,
+        client_id: str = None,
+        max_concurrent: int = 5,                   # número de workers concurrentes
+    ):
+        """
+        Inicia el consumidor Kafka con configuración avanzada.
+        """
+
+        self.max_concurrent = max_concurrent
+        self.workers = []
+        self.id_grupo = group_id or self.id_grupo or "grupo_default"
+        self.group_instance_id = group_instance_id or f"{self.id_grupo}_{uuid.uuid4()}"
 
         self.consumer = AIOKafkaConsumer(
             self.topic,
             bootstrap_servers=broker,
             group_id=self.id_grupo,
-            session_timeout_ms=180000,  # 3 minutos (balance entre detección de fallos y tolerancia)
-            heartbeat_interval_ms=25000,  # 25s (mantiene relación 1:3 con session_timeout)
-            max_poll_interval_ms=900000,  # 15 minutos (ajustado a tu necesidad real)
-            request_timeout_ms=150000,  # 2.5 minutos
-            retry_backoff_ms=15000,  # 15s (más generoso)
-            auto_offset_reset="earliest",
-            enable_auto_commit=False,
-            isolation_level="read_committed",
-            metadata_max_age_ms=45000,  # 45s
-            connections_max_idle_ms=3000000,  
-            )
+            group_instance_id=self.group_instance_id,
+            auto_offset_reset=auto_offset_reset,
+            enable_auto_commit=enable_auto_commit,
+            auto_commit_interval_ms=auto_commit_interval_ms,
+            max_partition_fetch_bytes=max_partition_fetch_bytes,
+            fetch_max_bytes=fetch_max_bytes,
+            fetch_min_bytes=fetch_min_bytes,
+            fetch_max_wait_ms=fetch_max_wait_ms,
+            session_timeout_ms=session_timeout_ms,
+            heartbeat_interval_ms=heartbeat_interval_ms,
+            max_poll_interval_ms=max_poll_interval_ms,
+            request_timeout_ms=request_timeout_ms,
+            retry_backoff_ms=retry_backoff_ms,
+            connections_max_idle_ms=connections_max_idle_ms,
+            isolation_level=isolation_level,
+            metadata_max_age_ms=metadata_max_age_ms,
+            check_crcs=check_crcs,
+            api_version=api_version,
+            security_protocol=security_protocol,
+            ssl_context=ssl_context,
+            sasl_mechanism=sasl_mechanism,
+            sasl_plain_username=sasl_plain_username,
+            sasl_plain_password=sasl_plain_password,
+            client_id=client_id or f"pv_{self.id_grupo}_{uuid.uuid4()}",
+        )
 
+        # 🔹 Arrancar el consumidor Kafka
         await self.consumer.start()
 
-        # Start consumer loop
+        # 🔹 Esperar asignación de particiones con timeout
+        try:
+            await asyncio.wait_for(self.consumer._subscription.wait_for_assignment(), timeout=10)
+            print(f"✅ Particiones asignadas a {self.id_grupo}")
+        except asyncio.TimeoutError:
+            print(f"⚠️ Timeout esperando asignación de particiones para {self.id_grupo}")
+
+        # 🔹 Lanzar el bucle de consumo
         self.consumer_task = asyncio.create_task(self._consume_loop())
 
-        # Start worker tasks
+        # 🔹 Crear workers concurrentes
         for _ in range(self.max_concurrent):
             worker = asyncio.create_task(self._worker_loop())
             self.workers.append(worker)
+
+        print(f"🚀 Consumer '{self.id_grupo}' iniciado con instancia '{self.group_instance_id}'")
+
 
     async def stop(self):
         if self.consumer_task:
