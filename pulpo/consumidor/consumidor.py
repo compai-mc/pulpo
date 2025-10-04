@@ -54,7 +54,6 @@ class KafkaEventConsumer:
         isolation_level: str = "read_committed",
         metadata_max_age_ms: int = 300000,         # 5 min para refrescar metadatos
         check_crcs: bool = True,
-        api_version: str | None = None,
         security_protocol: str = "PLAINTEXT",
         ssl_context=None,
         sasl_mechanism: str | None = None,
@@ -93,7 +92,6 @@ class KafkaEventConsumer:
             isolation_level=isolation_level,
             metadata_max_age_ms=metadata_max_age_ms,
             check_crcs=check_crcs,
-            api_version=api_version,
             security_protocol=security_protocol,
             ssl_context=ssl_context,
             sasl_mechanism=sasl_mechanism,
