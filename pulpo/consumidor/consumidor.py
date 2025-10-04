@@ -1,7 +1,7 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
 from aiokafka.structs import TopicPartition, OffsetAndMetadata
-from kafka import KafkaConsumer, TopicPartition
+from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
 from pulpo.logueador import log
@@ -31,6 +31,7 @@ class KafkaEventConsumer:
         self.consumer_task = None
         self.workers = []
         self.queue = asyncio.Queue()
+        self._reconnect_lock = asyncio.Lock()
 
 
     async def start(
@@ -105,7 +106,17 @@ class KafkaEventConsumer:
 
         # 🔹 Esperar asignación de particiones con timeout
         try:
-            await asyncio.wait_for(self.consumer._subscription.wait_for_assignment(), timeout=10)
+            #await asyncio.wait_for(self.consumer._subscription.wait_for_assignment(), timeout=10)
+
+            for _ in range(20):
+                parts = self.consumer.assignment()
+                if parts:
+                    log.info(f"✅ Particiones asignadas: {parts}")
+                    break
+                await asyncio.sleep(0.5)
+            else:
+                log.warning("⚠️ Timeout esperando asignación de particiones")
+
             print(f"✅ Particiones asignadas a {self.id_grupo}")
         except asyncio.TimeoutError:
             print(f"⚠️ Timeout esperando asignación de particiones para {self.id_grupo}")
@@ -131,8 +142,28 @@ class KafkaEventConsumer:
         for worker in self.workers:
             worker.cancel()
         await asyncio.gather(*self.workers, return_exceptions=True)
+
         if self.consumer:
-            await self.consumer.stop()
+            try:
+                await self.consumer.stop()
+            except Exception as e:
+                log.warning(f"[{self.id_grupo}] Error al detener el consumidor: {e}")
+
+
+    async def _reconnect(self, retries=3):
+        async with self._reconnect_lock:
+            for attempt in range(1, retries + 1):
+                try:
+                    if self.consumer:
+                        await self.consumer.stop()
+                    log.warning(f"[{self.id_grupo}] Reintentando conexión ({attempt}/{retries})...")
+                    await asyncio.sleep(5 * attempt)
+                    await self.start()
+                    return
+                except Exception as e:
+                    log.error(f"[{self.id_grupo}] Error al reconectar: {e}")
+            log.critical(f"[{self.id_grupo}] Fallo reconectando tras {retries} intentos.")
+
 
     async def _consume_loop(self):
         while True:
@@ -146,10 +177,6 @@ class KafkaEventConsumer:
                 await asyncio.sleep(10)
                 await self._reconnect()
 
-    async def _reconnect(self):
-        if self.consumer:
-            await self.consumer.stop()
-        await self.start()
 
     async def _worker_loop(self):
         """Procesa mensajes en paralelo desde la queue con timeout y commit con reintentos"""
@@ -158,7 +185,8 @@ class KafkaEventConsumer:
                 message = await self.queue.get()
                 try:
                     # Ejecuta el callback con timeout
-                    await asyncio.wait_for(self.callback(message), timeout=self.process_timeout)
+                    await asyncio.wait_for(self.callback(message, self.consumer), timeout=self.process_timeout)
+
 
                     # Commit con reintentos
                     for attempt in range(1, self.max_commit_retries + 1):
