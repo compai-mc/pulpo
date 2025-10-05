@@ -39,7 +39,7 @@ def old_arreglar_json(json_str: str):
         raise ValueError(f"No se pudo reparar el JSON: {e}")
 
 
-def extraer_json_del_texto(self, texto: str) -> dict:
+def extraer_json_del_texto(texto: str) -> dict:
       
 
         """
