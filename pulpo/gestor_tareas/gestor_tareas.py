@@ -1,10 +1,9 @@
-import asyncio
 import json
 import uuid
-from arango import ArangoClient
 import os
 import sys
-from pathlib import Path 
+from pathlib import Path
+from arango import ArangoClient
 
 from pulpo.logueador import log
 
@@ -12,9 +11,13 @@ from pulpo.logueador import log
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from consumidor.consumidor import KafkaEventConsumer
+# Importar el productor y consumidor
 from publicador.publicador import KafkaEventPublisher
+from consumidor.consumidor import KafkaEventConsumer
 
+# ========================================================
+# 🔧 Configuración
+# ========================================================
 ARANGO_HOST = os.getenv("ARANGO_HOST", "http://alcazar:8529")
 ARANGO_DB_COMPAI = os.getenv("ARANGO_DB_COMPAI", "compai_db")
 ARANGO_USER = os.getenv("ARANGO_USER", "root")
@@ -26,7 +29,21 @@ TOPIC_END_TASK = os.getenv("TOPIC_END_TASK", "job.task.completed")
 TOPIC_END_JOB = os.getenv("TOPIC_END_JOB", "job.completed")
 TOPIC_END_JOBS = os.getenv("TOPIC_END_JOBS", "jobs.all.completed")
 
+
+# ========================================================
+# 🧠 Clase principal: GestorTareas
+# ========================================================
 class GestorTareas:
+    """Gestor centralizado de tareas y jobs, con soporte Singleton."""
+
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(
         self,
         topic_finalizacion_tareas: str = TOPIC_END_TASK,
@@ -34,98 +51,143 @@ class GestorTareas:
         on_complete_callback=None,
         on_all_complete_callback=None,
         on_task_complete_callback=None,
-        id_grupo="job_monitor_group"
+        group_id=f"job_monitor_group_{uuid.uuid4()}",
     ):
-        # si no hay callbacks definidos, NO creo un consumer 
-        self.crear_consumer =  on_complete_callback or on_all_complete_callback or on_task_complete_callback
+        if self._initialized:
+            log.warning("[GestorTareas] Ya inicializado, ignorando nueva configuración")
+            return
 
-        self.topic_finalizacion_tareas = topic_finalizacion_tareas
-        self.topic_finalizacion_global = topic_finalizacion_global
-
-        self.client = ArangoClient(hosts=ARANGO_HOST)
-        self.db = self.client.db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
-        
-        #print(f"[INFO] Conectado a DB: {self.db.name}")
-        #print("[INFO] Colecciones disponibles:", [c["name"] for c in self.db.collections()])
-
-        if not self.db.has_collection(ARANGO_COLLECTION):
-            raise RuntimeError(f"La colección {ARANGO_COLLECTION} no existe en la DB {ARANGO_DB_COMPAI}")
-
-        self.collection = self.db.collection(ARANGO_COLLECTION)
-
-        self.consumer = None
-        self.producer = KafkaEventPublisher()
-        if self.crear_consumer: 
-            self.consumer = KafkaEventConsumer(
-                topic=self.topic_finalizacion_tareas,
-                callback=self._on_kafka_message,
-                id_grupo=id_grupo
+        # --- Conexión a ArangoDB ---
+        try:
+            self.client = ArangoClient(hosts=ARANGO_HOST)
+            self.db = self.client.db(
+                ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD
             )
+            if not self.db.has_collection(ARANGO_COLLECTION):
+                raise RuntimeError(
+                    f"La colección {ARANGO_COLLECTION} no existe en {ARANGO_DB_COMPAI}"
+                )
+            self.collection = self.db.collection(ARANGO_COLLECTION)
+            log.info(f"[GestorTareas] Conectado a ArangoDB: {ARANGO_HOST}/{ARANGO_DB_COMPAI}")
+        except Exception as e:
+            log.error(f"[GestorTareas] Error conectando a ArangoDB: {e}")
+            raise
 
+        # --- Callbacks opcionales ---
         self.on_complete_callback = on_complete_callback
         self.on_all_complete_callback = on_all_complete_callback
         self.on_task_complete_callback = on_task_complete_callback
 
-    async def start(self):
-        await self.producer.start()
-        if self.crear_consumer:
-            await self.consumer.start()
+        # --- Kafka Producer ---
+        self.producer = KafkaEventPublisher()
+        self.producer_started = False
 
-    async def stop(self):
-        if self.crear_consumer:
-            try:
-                await self.consumer.stop()
-            except Exception as e:
-                log.error(f"[!] Problema al parar consumer Kafka: {e}")
-        await self.producer.stop()
-
-    async def add_job(self, tasks: list[dict], job_id: str = None):
-        if job_id is None:
-            job_id = str(uuid.uuid4())
-
-        nuevas_tareas = []
-        if self.collection.has(job_id):
-            job = self.collection.get(job_id)
-            existing_tasks = job.get("tasks", {})
-            for task in tasks:
-                if task["task_id"] not in existing_tasks:
-                    existing_tasks[task["task_id"]] = {
-                        **{k: v for k, v in task.items() if k != "task_id"},
-                        "completed": False
-                    }
-                    nuevas_tareas.append(task)
-            job["tasks"] = existing_tasks
-            self.collection.update(job)
+        # --- Kafka Consumer (si hay callbacks) ---
+        self.consumer = None
+        if any([on_complete_callback, on_all_complete_callback, on_task_complete_callback]):
+            self.consumer = KafkaEventConsumer(
+                topic=topic_finalizacion_tareas,
+                callback=self._on_kafka_message,
+                group_id=group_id,
+            )
+            log.info(f"[GestorTareas] Consumer configurado para topic: {topic_finalizacion_tareas}")
         else:
-            # Si no existe, crea el job con las tareas nuevas
-            doc = {
-                "_key": job_id,
-                "tasks": {
-                    task["task_id"]: {
-                        **{k: v for k, v in task.items() if k != "task_id"},
-                        "completed": False
-                    }
-                    for task in tasks
+            log.info("[GestorTareas] Sin callbacks configurados, consumer no creado")
+
+        self._initialized = True
+        log.info("[GestorTareas] Instancia única creada correctamente")
+
+    # ========================================================
+    # 🚀 Ciclo de vida
+    # ========================================================
+    def start(self):
+        """Inicia el productor y el consumidor (si lo hay)."""
+        try:
+            if not self.producer_started:
+                self.producer.start()
+                self.producer_started = True
+                log.info("[GestorTareas] Producer iniciado")
+
+            if self.consumer and not getattr(self.consumer, "_running", False):
+                self.consumer.start()
+                log.info("[GestorTareas] Consumer iniciado")
+        except Exception as e:
+            log.error(f"[GestorTareas] Error en start(): {e}")
+            raise
+
+    def stop(self):
+        """Detiene el consumer y el producer."""
+        if self.consumer:
+            try:
+                self.consumer.stop()
+                log.info("[GestorTareas] Consumer detenido")
+            except Exception as e:
+                log.error(f"[GestorTareas] Error al parar consumer: {e}")
+
+        if self.producer_started:
+            try:
+                self.producer.stop()
+                self.producer_started = False
+                log.info("[GestorTareas] Producer detenido")
+            except Exception as e:
+                log.error(f"[GestorTareas] Error al parar producer: {e}")
+
+    # ========================================================
+    # 📦 Gestión de Jobs
+    # ========================================================
+    def add_job(self, tasks: list[dict], job_id: str = None):
+        """Añade tareas a un job (nuevo o existente) y publica mensajes de inicio."""
+        if not tasks:
+            log.warning("[GestorTareas] Intento de crear un job sin tareas")
+            return None
+
+        job_id = job_id or str(uuid.uuid4())
+        nuevas_tareas = []
+
+        try:
+            if self.collection.has(job_id):
+                job = self.collection.get(job_id)
+                existing_tasks = job.get("tasks", {})
+
+                for task in tasks:
+                    task_id = task.get("task_id")
+                    if not task_id:
+                        continue
+                    if task_id not in existing_tasks:
+                        existing_tasks[task_id] = {
+                            **{k: v for k, v in task.items() if k != "task_id"},
+                            "completed": False,
+                        }
+                        nuevas_tareas.append(task)
+
+                job["tasks"] = existing_tasks
+                self.collection.update(job)
+                log.info(f"[GestorTareas] Job '{job_id}' actualizado con {len(nuevas_tareas)} nuevas tareas")
+            else:
+                doc = {
+                    "_key": job_id,
+                    "tasks": {
+                        task["task_id"]: {
+                            **{k: v for k, v in task.items() if k != "task_id"},
+                            "completed": False,
+                        }
+                        for task in tasks if "task_id" in task
+                    },
                 }
-            }
-            self.collection.insert(doc)
-            nuevas_tareas = tasks  # Todas son nuevas
+                self.collection.insert(doc)
+                nuevas_tareas = tasks[:]
+                log.info(f"[GestorTareas] Job '{job_id}' creado con {len(nuevas_tareas)} tareas")
+        except Exception as e:
+            log.error(f"[GestorTareas] Error creando job '{job_id}': {e}")
+            return None
 
-        log.info(f"Job '{job_id}' actualizado/creado con tareas: {[task['task_id'] for task in nuevas_tareas]}")
-
-        # Publicar inicio de tareas SOLO para las nuevas
-        tasks_msgs = []
+        # Publicar las tareas
         for task in nuevas_tareas:
-            msg = {
-                "job_id": job_id,
-                "task_id": task["task_id"],
-                "action": "start_task"
-            }
-            tasks_msgs.append(self._publicar_tarea(msg))
-        await asyncio.gather(*tasks_msgs)
+            msg = {"job_id": job_id, "task_id": task["task_id"], "action": "start_task"}
+            self._publicar_tarea(msg)
 
         return job_id
-
+    
     def update_task(self, job_id: str, task_id: str, updates: dict):
         job = self.collection.get(job_id)
         if not job or task_id not in job["tasks"]:
@@ -146,7 +208,6 @@ class GestorTareas:
         self.collection.update(job)
         log.info(f"[✔] Job '{job_id}' actualizado")
         return True
-
     
     def get_task_field(self, job_id: str, task_id: str, field: str):
         """
@@ -181,162 +242,91 @@ class GestorTareas:
 
         self.collection.update(job)  
         return True
-    
 
+    # ========================================================
+    # 📬 Publicación y eventos
+    # ========================================================
+    def _publicar_tarea(self, msg: dict):
+        """Publica una tarea asegurando que el productor esté activo."""
+        if not self.producer_started:
+            log.warning("[GestorTareas] Producer no iniciado, arrancando automáticamente...")
+            self.start()
+        self.producer.publish(TOPIC_TASK, msg)
 
-    async def _publicar_tarea(self, msg: dict):
-        await self.producer.publish(TOPIC_TASK, msg)
-
-    async def _on_kafka_message(self, message):
+    def _on_kafka_message(self, message, *args, **kwargs):
+        """Procesa mensajes de Kafka sobre tareas completadas."""
         try:
             data = json.loads(message.value.decode("utf-8"))
             job_id = data.get("job_id")
             task_id = data.get("task_id")
-            log.info(f"[Kafka] Mensaje recibido en offset {message.offset}: {data}")
+
+            log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
+
             if job_id and task_id:
-                if self.on_task_complete_callback:
-                    await self.on_task_complete_callback(job_id, task_id)
-                log.debug(f"Terminado callback: job_id={job_id}, tipo={type(job_id)}")
-                await self.task_completed(job_id, task_id)
-                log.debug(f"Marcado de tarea como completada: job_id={job_id}, tipo={type(job_id)}")
-                job = self.collection.get(job_id)
-                if job and all(t["completed"] for t in job["tasks"].values()):
-                    if self.on_complete_callback:
-                        await self.on_complete_callback(job_id)
-
+                self.task_completed(job_id, task_id)
         except Exception as e:
-            log.error(f"[!] Error procesando mensaje offset {message.offset}: {e} en on_kafka")
-            # ⚠️ Importante: aunque falle, hacer commit del offset
-            #await self.consumer.consumer.commit()
+            log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
 
-    async def task_completed(self, job_id: str, task_id: str):
-        log.info(f"Marcando tarea '{task_id}' del job '{job_id}' como completada.")
-        log.debug([col["name"] for col in self.db.collections()])
-        job = self.collection.get(job_id)
-        log.debug(f"Marcada tarea '{task_id}' del job '{job_id}' como completada...  Ahora: {job["tasks"][task_id]["completed"]}")
-        if not job:
-            log.error(f"[!] Job '{job_id}' no encontrado")
-            return {"error": "Job no encontrado"}
+    def task_completed(self, job_id: str, task_id: str):
+        """Marca una tarea como completada y publica los eventos asociados."""
+        try:
+            job = self.collection.get(job_id)
+            if not job or task_id not in job["tasks"]:
+                log.error(f"[GestorTareas] No se encontró tarea '{task_id}' en job '{job_id}'")
+                return
 
-        if task_id not in job["tasks"]:
-            log.error(f"[!] Tarea '{task_id}' no pertenece al job '{job_id}'")
-            return {"error": "Tarea no encontrada en el job"}
-        
-        if job["tasks"][task_id]["completed"]:
-            return {"status": "completed", "message": f"Tarea '{task_id}' del job '{job_id}' ya estaba completada"}    
+            job["tasks"][task_id]["completed"] = True
+            self.collection.update(job)
+            log.info(f"[GestorTareas] ✔ Tarea '{task_id}' completada en job '{job_id}'")
 
-        job["tasks"][task_id]["completed"] = True
-        self.collection.update(job)
-        log.info(f"[✔] Tarea '{task_id}' completada en job '{job_id}'")
+            self.producer.publish(
+                TOPIC_END_TASK,
+                {"job_id": job_id, "task_id": task_id, "status": "completed", "uuid": str(uuid.uuid4())},
+            )
 
-        # ✅ Publicar evento de finalización de tarea
-        await self.producer.publish(TOPIC_END_TASK, {
-            "job_id": job_id,
-            "task_id": task_id,
-            "status": "completed",
-            "uuid": str(uuid.uuid4())
-        })
+            if all(t["completed"] for t in job["tasks"].values()):
+                self.producer.publish(
+                    TOPIC_END_JOB,
+                    {"job_id": job_id, "status": "completed", "uuid": str(uuid.uuid4())},
+                )
+                log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
-        # ✅ Callback
-        if self.on_task_complete_callback:
-            await self.on_task_complete_callback(job_id, task_id)
+                if self.on_complete_callback:
+                    self.on_complete_callback(job_id)
+        except Exception as e:
+            log.error(f"[GestorTareas] Error en task_completed: {e}")
 
-        # Si todas las tareas del job están completas
-        #for t in job["tasks"].values():  print(f"{t}\n")
 
-        if all(t["completed"] for t in job["tasks"].values()):
-            log.info(f"[🎉] Job '{job_id}' completado")
-            if self.on_complete_callback:
-                await self.on_complete_callback(job_id)
+# ========================================================
+# 🧪 Ejemplo de uso
+# ========================================================
+def on_task_complete(job_id, task_id):
+    print(f"🔹 Callback: Tarea {task_id} del job {job_id} completada.")
 
-            await self.producer.publish(self.topic_finalizacion_global, {
-                "job_id": job_id,
-                "status": "completed",
-                "uuid": str(uuid.uuid4())
-            })
+def on_job_complete(job_id):
+    print(f"✅ Callback: Job {job_id} completado.")
 
-            if self._all_jobs_completed():
-                log.info("[🎉] Todos los jobs completados")
-                if self.on_all_complete_callback:
-                    await self.on_all_complete_callback()
-
-            return {"status": "ok", "message": f"Tarea '{task_id}' completada en job '{job_id}'. Todas las tareas del job están completas."}
-        
-        return {"status": "ok", "message": f"Tarea '{task_id}' completada en job '{job_id}'"}
-
-    def _all_jobs_completed(self) -> bool:
-        cursor = self.collection.find({})
-        for job in cursor:
-            if not all(t["completed"] for t in job["tasks"].values()):
-                return False
-        return True
-    
-    def by_status(self):
-        AQL = 'FOR j IN @@col FILTER !HAS(j,"end_time") || j.end_time==null COLLECT s = j.status WITH COUNT INTO c RETURN {status:s, count:c}'
-        db = ArangoClient(hosts=ARANGO_HOST).db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
-        cur = db.aql.execute(AQL, bind_vars={"@col": ARANGO_COLLECTION})
-        return {"ok": True, "source": "arango", "items": list(cur)}
-
-    def active_ids(self):
-        AQL = 'FOR j IN @@col FILTER (!HAS(j,"end_time") || j.end_time==null) RETURN j._key'
-        db = ArangoClient(hosts=ARANGO_HOST).db(ARANGO_DB_COMPAI, username=ARANGO_USER, password=ARANGO_PASSWORD)
-        cur = db.aql.execute(AQL, bind_vars={"@col": ARANGO_COLLECTION})
-        return {"ok": True, "ids": list(cur)}
-
-########################################
-# Para pruebas y demostración
-
-# Callbacks de pruebas
-
-async def on_task_complete(job_id, task_id):
-    print(f"🔹🔹🔹🔹🔹🔹🔹🔹 Callback: Tarea {task_id} del job {job_id} completada.")
-
-async def on_job_complete(job_id):
-    print(f"✅✅✅✅✅✅✅✅ Callback: Job {job_id} completado.")
-
-async def on_all_jobs_complete():
-    print("🌍🌍🌍🌍🌍🌍🌍🌍 Callback: Todos los jobs completados.")
-
-# Ejemplo de uso adaptado
-async def main():
-    monitor = GestorTareas(
-        on_complete_callback=on_job_complete,
-        on_all_complete_callback=on_all_jobs_complete,
-        on_task_complete_callback=on_task_complete  
-    )
-
-    await monitor.start()
-
-    # Crear el job y obtener el job_id generado usando tareas con campos adicionales
-    tasks = [
-        {"task_id": "task_id_1", "card_id": "card_id_1", "xxx_id": "xxx_id_1"},
-        {"task_id": "task_id_2", "card_id": "card_id_2"}
-    ]
-    job_id = await monitor.add_job(tasks)
-
-    # Simular finalización de tareas usando los task_id de la lista de tareas
-    for task in tasks:
-        await monitor.task_completed(job_id, task["task_id"])
-
-    # Mantener corriendo para escuchar mensajes reales
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except KeyboardInterrupt:
-        await monitor.stop()
-
-async def main2():
-    monitor = GestorTareas()
-    await monitor.start()
-    devolucion = monitor.get_task_field("c37565d2-f436-46fd-a7a7-508e1b72f379","tarea_prueba1", "card_id")
-    print(devolucion)
-    await monitor.stop()
-
+def on_all_jobs_complete():
+    print("🌍 Callback: Todos los jobs completados.")
 
 
 if __name__ == "__main__":
-    
-    asyncio.run(main())
+    gestor = GestorTareas(
+        on_complete_callback=on_job_complete,
+        on_all_complete_callback=on_all_jobs_complete,
+        on_task_complete_callback=on_task_complete,
+    )
 
+    gestor.start()
 
-    
+    tasks = [
+        {"task_id": "task_1", "card_id": "card_1"},
+        {"task_id": "task_2", "card_id": "card_2"},
+    ]
+
+    job_id = gestor.add_job(tasks)
+
+    for task in tasks:
+        gestor.task_completed(job_id, task["task_id"])
+
+    gestor.stop()

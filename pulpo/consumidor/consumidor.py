@@ -1,59 +1,64 @@
-import asyncio
-from aiokafka import AIOKafkaConsumer, ConsumerStoppedError
-from aiokafka.structs import TopicPartition, OffsetAndMetadata
-from kafka import KafkaConsumer
+import threading
+import time
+from kafka import KafkaConsumer, TopicPartition, OffsetAndMetadata
 from kafka.errors import NoBrokersAvailable, KafkaTimeoutError, KafkaError
 import os
-from pulpo.logueador import log
 import uuid
+from pulpo.logueador import log
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
 
+
 class KafkaEventConsumer:
-    def __init__(self, topic: str, callback: callable, id_grupo: str = "global",
-                 max_concurrent: int = 5, process_timeout: int = 60, max_commit_retries: int = 3):
+    def __init__(
+        self,
+        topic: str,
+        callback: callable,
+        group_id: str = "global",
+        max_concurrent: int = 5,
+        process_timeout: int = 60,
+        max_commit_retries: int = 3,
+        parallel: bool = False,  
+    ):
         """
         :param topic: Tópico de Kafka.
-        :param callback: Función async que procesa cada mensaje.
-        :param id_grupo: Consumer group.
-        :param max_concurrent: Máximo de mensajes procesados en paralelo.
-        :param process_timeout: Timeout (s) para cada callback.
+        :param callback: Función síncrona que procesa cada mensaje.
+        :param group_id: Consumer group.
+        :param max_concurrent: Número máximo de hilos procesando mensajes (solo si parallel=True).
+        :param process_timeout: Timeout (s) para procesar cada mensaje.
         :param max_commit_retries: Reintentos de commit ante fallo.
+        :param parallel: Si False, procesará los mensajes uno a uno.
         """
         self.topic = topic
         self.callback = callback
-        self.id_grupo = id_grupo
+        self.group_id = group_id
         self.max_concurrent = max_concurrent
         self.process_timeout = process_timeout
         self.max_commit_retries = max_commit_retries
+        self.parallel = parallel
 
         self.consumer = None
-        self.consumer_task = None
-        self.workers = []
-        self.queue = asyncio.Queue()
-        self._reconnect_lock = asyncio.Lock()
+        self.threads = []
+        self.running = False
+        self._lock = threading.Lock()
 
-
-    async def start(
+    # -------------------------------------------------------------------------
+    # INICIO Y DETENCIÓN
+    # -------------------------------------------------------------------------
+    def start(
         self,
         broker: str = KAFKA_BROKER,
         auto_offset_reset: str = "earliest",
         enable_auto_commit: bool = False,
-        auto_commit_interval_ms: int = 5000,
-        group_id: str = None,
         group_instance_id: str = None,
-        max_partition_fetch_bytes: int = 1048576,  # 1 MB por partición
-        fetch_max_bytes: int = 52428800,           # 50 MB total
-        fetch_min_bytes: int = 1,
-        fetch_max_wait_ms: int = 500,
-        session_timeout_ms: int = 30000,           # 30s
-        heartbeat_interval_ms: int = 10000,        # 10s
-        max_poll_interval_ms: int = 300000,        # 5 minutos
-        request_timeout_ms: int = 40000,           # 40s
-        retry_backoff_ms: int = 100,               # espera mínima entre reintentos
-        connections_max_idle_ms: int = 540000,     # 9 minutos
+        session_timeout_ms: int = 90000,
+        heartbeat_interval_ms: int = 10000,
+        max_poll_interval_ms: int = 900000,
+        request_timeout_ms: int = 100000,
+        retry_backoff_ms: int = 100,
+        connections_max_idle_ms: int = 540000,
         isolation_level: str = "read_committed",
-        metadata_max_age_ms: int = 300000,         # 5 min para refrescar metadatos
+        metadata_max_age_ms: int = 300000,
         check_crcs: bool = True,
         security_protocol: str = "PLAINTEXT",
         ssl_context=None,
@@ -61,165 +66,178 @@ class KafkaEventConsumer:
         sasl_plain_username: str | None = None,
         sasl_plain_password: str | None = None,
         client_id: str = None,
-        max_concurrent: int = 5,                   # número de workers concurrentes
     ):
-        """
-        Inicia el consumidor Kafka con configuración avanzada.
-        """
+        """Inicia el consumidor Kafka con configuración avanzada."""
 
-        self.max_concurrent = max_concurrent
-        self.workers = []
-        self.id_grupo = group_id or self.id_grupo or "grupo_default"
-        self.group_instance_id = group_instance_id or f"{self.id_grupo}_{uuid.uuid4()}"
+        self.group_instance_id = group_instance_id or f"{self.group_id}_{uuid.uuid4()}"
+        self.running = True
 
-        self.consumer = AIOKafkaConsumer(
-            self.topic,
-            bootstrap_servers=broker,
-            group_id=self.id_grupo,
-            group_instance_id=self.group_instance_id,
-            auto_offset_reset=auto_offset_reset,
-            enable_auto_commit=enable_auto_commit,
-            auto_commit_interval_ms=auto_commit_interval_ms,
-            max_partition_fetch_bytes=max_partition_fetch_bytes,
-            fetch_max_bytes=fetch_max_bytes,
-            fetch_min_bytes=fetch_min_bytes,
-            fetch_max_wait_ms=fetch_max_wait_ms,
-            session_timeout_ms=session_timeout_ms,
-            heartbeat_interval_ms=heartbeat_interval_ms,
-            max_poll_interval_ms=max_poll_interval_ms,
-            request_timeout_ms=request_timeout_ms,
-            retry_backoff_ms=retry_backoff_ms,
-            connections_max_idle_ms=connections_max_idle_ms,
-            isolation_level=isolation_level,
-            metadata_max_age_ms=metadata_max_age_ms,
-            check_crcs=check_crcs,
-            security_protocol=security_protocol,
-            ssl_context=ssl_context,
-            sasl_mechanism=sasl_mechanism,
-            sasl_plain_username=sasl_plain_username,
-            sasl_plain_password=sasl_plain_password,
-            client_id=client_id or f"pv_{self.id_grupo}_{uuid.uuid4()}",
-        )
-
-        # 🔹 Arrancar el consumidor Kafka
-        await self.consumer.start()
-
-        # 🔹 Esperar asignación de particiones con timeout
         try:
-            #await asyncio.wait_for(self.consumer._subscription.wait_for_assignment(), timeout=10)
+            self.consumer = KafkaConsumer(
+                self.topic,
+                bootstrap_servers=broker,
+                group_id=self.group_id,
+                enable_auto_commit=enable_auto_commit,
+                auto_offset_reset=auto_offset_reset,
+                client_id=client_id or f"pv_{self.group_id}_{uuid.uuid4()}",
+                request_timeout_ms=request_timeout_ms,
+                session_timeout_ms=session_timeout_ms,
+                heartbeat_interval_ms=heartbeat_interval_ms,
+                max_poll_interval_ms=max_poll_interval_ms,
+                connections_max_idle_ms=connections_max_idle_ms,
+                security_protocol=security_protocol,
+                ssl_context=ssl_context,
+                sasl_mechanism=sasl_mechanism,
+                sasl_plain_username=sasl_plain_username,
+                sasl_plain_password=sasl_plain_password,
+                check_crcs=check_crcs,
+                isolation_level=isolation_level,
+                metadata_max_age_ms=metadata_max_age_ms,
+                retry_backoff_ms=retry_backoff_ms,
+            )
 
-            for _ in range(20):
-                parts = self.consumer.assignment()
-                if parts:
-                    log.info(f"✅ Particiones asignadas: {parts}")
-                    break
-                await asyncio.sleep(0.5)
+            # Esperar asignación de particiones
+            parts = self.consumer.partitions_for_topic(self.topic)
+            if parts:
+                log.info(f"✅ Particiones asignadas: {parts}")
             else:
-                log.warning("⚠️ Timeout esperando asignación de particiones")
+                log.warning(f"⚠️ No se encontraron particiones para el topic {self.topic}")
 
-            print(f"✅ Particiones asignadas a {self.id_grupo}")
-        except asyncio.TimeoutError:
-            print(f"⚠️ Timeout esperando asignación de particiones para {self.id_grupo}")
+            if self.parallel:
+                # Modo paralelo
+                for i in range(self.max_concurrent):
+                    t = threading.Thread(target=self._consume_loop, name=f"worker-{i}", daemon=True)
+                    t.start()
+                    self.threads.append(t)
+                log.info(f"🚀 Consumer '{self.group_id}' iniciado en modo paralelo ({self.max_concurrent} hilos)")
+            else:
+                # Modo secuencial
+                t = threading.Thread(target=self._consume_loop, name="worker-secuencial", daemon=True)
+                t.start()
+                self.threads.append(t)
+                log.info(f"🚀 Consumer '{self.group_id}' iniciado en modo secuencial (uno a uno)")
 
-        # 🔹 Lanzar el bucle de consumo
-        self.consumer_task = asyncio.create_task(self._consume_loop())
+        except NoBrokersAvailable:
+            raise RuntimeError(f"No se pudo conectar al broker: {broker}")
+        except Exception as e:
+            raise RuntimeError(f"Error iniciando el consumidor: {e}")
 
-        # 🔹 Crear workers concurrentes
-        for _ in range(self.max_concurrent):
-            worker = asyncio.create_task(self._worker_loop())
-            self.workers.append(worker)
-
-        print(f"🚀 Consumer '{self.id_grupo}' iniciado con instancia '{self.group_instance_id}'")
-
-
-    async def stop(self):
-        if self.consumer_task:
-            self.consumer_task.cancel()
-            try:
-                await self.consumer_task
-            except asyncio.CancelledError:
-                pass
-        for worker in self.workers:
-            worker.cancel()
-        await asyncio.gather(*self.workers, return_exceptions=True)
-
+    def stop(self):
+        """Detiene el consumidor y todos los hilos."""
+        self.running = False
         if self.consumer:
             try:
-                await self.consumer.stop()
+                self.consumer.close()
+                log.info(f"🛑 Consumer '{self.group_id}' detenido correctamente")
             except Exception as e:
-                log.warning(f"[{self.id_grupo}] Error al detener el consumidor: {e}")
+                log.warning(f"[{self.group_id}] Error al detener el consumidor: {e}")
 
+        for t in self.threads:
+            t.join(timeout=2)
 
-    async def _reconnect(self, retries=3):
-        async with self._reconnect_lock:
+    # -------------------------------------------------------------------------
+    # RECONEXIÓN
+    # -------------------------------------------------------------------------
+    def _reconnect(self, retries=3):
+        """Intento de reconexión síncrona."""
+        with self._lock:
             for attempt in range(1, retries + 1):
                 try:
                     if self.consumer:
-                        await self.consumer.stop()
-                    log.warning(f"[{self.id_grupo}] Reintentando conexión ({attempt}/{retries})...")
-                    await asyncio.sleep(5 * attempt)
-                    await self.start()
+                        self.consumer.close()
+                    log.warning(f"[{self.group_id}] Reintentando conexión ({attempt}/{retries})...")
+                    time.sleep(5 * attempt)
+                    self.start()
                     return
                 except Exception as e:
-                    log.error(f"[{self.id_grupo}] Error al reconectar: {e}")
-            log.critical(f"[{self.id_grupo}] Fallo reconectando tras {retries} intentos.")
+                    log.error(f"[{self.group_id}] Error al reconectar: {e}")
+            log.critical(f"[{self.group_id}] Fallo reconectando tras {retries} intentos.")
 
-
-    async def _consume_loop(self):
-        while True:
+    # -------------------------------------------------------------------------
+    # BUCLE PRINCIPAL DE CONSUMO
+    # -------------------------------------------------------------------------
+    def _consume_loop(self):
+        """Loop principal de consumo con commit y control de errores."""
+        while self.running:
             try:
-                async for message in self.consumer:
-                    await self.queue.put(message)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
+                for message in self.consumer:
+                    if not self.running:
+                        break
+                    if self.parallel:
+                        threading.Thread(target=self._process_message, args=(message,), daemon=True).start()
+                    else:
+                        self._process_message(message)
+            except KafkaError as e:
                 log.error(f"[!] Error en el loop de consumo: {e}. Reintentando en 10s...")
-                await asyncio.sleep(10)
-                await self._reconnect()
+                time.sleep(10)
+                self._reconnect()
+            except Exception as e:
+                log.error(f"[!] Excepción general en el consumo: {e}")
+                time.sleep(5)
+
+    # -------------------------------------------------------------------------
+    # PROCESAMIENTO DE MENSAJE Y COMMIT
+    # -------------------------------------------------------------------------
+    def _process_message(self, message):
+        """Procesa cada mensaje con timeout y commits con reintento."""
+
+        log.debug(f"Mensaje recibido: tipo={type(message)}, topic={getattr(message, 'topic', None)}, partition={getattr(message, 'partition', None)}, offset={getattr(message, 'offset', None)}")
 
 
-    async def _worker_loop(self):
-        """Procesa mensajes en paralelo desde la queue con timeout y commit con reintentos"""
-        while True:
+        try:
+            if not message or not hasattr(message, "topic"):
+                log.warning("[!] Mensaje inválido o vacío recibido, se ignora.")
+                return
+
+            start_time = time.time()
             try:
-                message = await self.queue.get()
-                try:
-                    # Ejecuta el callback con timeout
-                    await asyncio.wait_for(self.callback(message, self.consumer), timeout=self.process_timeout)
+                self.callback(message, self.consumer)
+            except Exception as e:
+                log.error(f"[!] Error dentro de callback: {e}")
+                return
+            elapsed = time.time() - start_time
+
+            if elapsed > self.process_timeout:
+                log.warning(f"[!] Procesamiento lento ({elapsed:.1f}s) para offset {message.offset}")
+
+            tp = TopicPartition(message.topic, message.partition)
+            offsets = {tp: OffsetAndMetadata(message.offset + 1, "procesado", 0)}
+
+            # Evitar commits simultáneos (thread-safe)
+            with self._lock:
+                for attempt in range(1, self.max_commit_retries + 1):
+                    try:
+                        if not self.consumer:
+                            log.warning("[!] Consumer no disponible para commit.")
+                            return
+                        log.debug(f"Commit info: topic={message.topic}, partition={message.partition}, offset={message.offset}")
+                        self.consumer.commit(offsets=offsets)
+                        break
+                    except IndexError:
+                        log.error("[!] Commit falló: partición ya no asignada (IndexError). Reintentando...")
+                        time.sleep(1)
+                        continue
+                    except Exception as e:
+                        log.error(f"[!] Commit fallo (intento {attempt}): {e}")
+                        if attempt == self.max_commit_retries:
+                            log.error(f"[!] Commit final fallido para offset {message.offset}")
+                        else:
+                            time.sleep(2 ** attempt)
+
+        except Exception as e:
+            log.error(f"[!] Error procesando mensaje offset {getattr(message, 'offset', '?')}: {e}")
 
 
-                    # Commit con reintentos
-                    for attempt in range(1, self.max_commit_retries + 1):
-                        try:
-                            tp = TopicPartition(message.topic, message.partition)
-                            offsets = {tp: OffsetAndMetadata(message.offset + 1, "procesado")}
-                            await self.consumer.commit(offsets=offsets)
-                            break
-                        except Exception as e:
-                            log.error(f"[!] Commit fallo (intento {attempt}): {e}")
-                            if attempt == self.max_commit_retries:
-                                log.error(f"[!] Commit final fallido para offset {message.offset}")
-                            else:
-                                await asyncio.sleep(2 ** attempt)  # backoff exponencial
-                except asyncio.TimeoutError:
-                    log.error(f"[!] Timeout procesando mensaje offset {message.offset}")
-                except Exception as e:
-                    log.error(f"[!] Error procesando mensaje offset {message.offset} en el worker: {e}")
-                finally:
-                    self.queue.task_done()
-            except asyncio.CancelledError:
-                break
-
-
+    # -------------------------------------------------------------------------
+    # LECTURA DIRECTA DE UN OFFSET
+    # -------------------------------------------------------------------------
     def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
-        """
-        Versión síncrona para leer un offset específico.
-        """
+        """Lee un offset específico de forma síncrona."""
         consumer = None
         try:
             consumer = KafkaConsumer(
                 bootstrap_servers=KAFKA_BROKER,
-                group_id=self.id_grupo,
+                group_id=self.group_id,
                 enable_auto_commit=False,
                 auto_offset_reset="none",
                 consumer_timeout_ms=timeout_ms
@@ -227,7 +245,6 @@ class KafkaEventConsumer:
 
             tp = TopicPartition(self.topic, partition)
 
-            # Validar que la partición existe
             partitions = consumer.partitions_for_topic(self.topic)
             if partitions is None:
                 raise RuntimeError(f"El topic '{self.topic}' no existe en el broker {KAFKA_BROKER}")
@@ -241,7 +258,7 @@ class KafkaEventConsumer:
                 if msg.offset == offset:
                     return msg
                 elif msg.offset > offset:
-                    break  
+                    break
 
             return None
 
@@ -254,3 +271,26 @@ class KafkaEventConsumer:
         finally:
             if consumer is not None:
                 consumer.close()
+
+
+################################################
+#   Pruebas
+################################################
+def procesar_mensaje(msg, consumer):
+    print(f"📨 Mensaje recibido: {msg.value.decode()} de {msg.topic}-{msg.partition}@{msg.offset}")
+
+
+if __name__ == "__main__":
+    # 🔹 Cambia `parallel=False` si quieres procesar mensajes uno a uno
+    consumer = KafkaEventConsumer(
+        "mi_topic",
+        procesar_mensaje,
+        group_id="grupo_sync",
+        parallel=False,  # Cambia a True para paralelo
+    )
+    consumer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        consumer.stop()
