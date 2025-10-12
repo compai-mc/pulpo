@@ -478,6 +478,14 @@ class KafkaEventConsumer:
         
         log.info(f"✅ [{self.group_id}] Consumidor detenido")
 
+    def poll(self, timeout_ms: int = 1000):
+        """Permite hacer polling manual si se desea."""
+        if self._consumer:
+            return self._consumer.poll(timeout_ms=timeout_ms)
+        else:
+            log.error("❌ Consumidor no inicializado")
+            return {}
+
     def get_metrics(self) -> Dict[str, Any]:
         """Retorna las métricas del consumidor."""
         return {
