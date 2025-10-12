@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Callable, Optional, Dict, Any
 from kafka import KafkaConsumer, TopicPartition, OffsetAndMetadata
-from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError
+from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError, KafkaConnectionError
 import os
 from datetime import datetime
 from collections import defaultdict
@@ -498,6 +498,51 @@ class KafkaEventConsumer:
     def is_healthy(self) -> bool:
         """Verifica si el consumidor está saludable."""
         return self._is_healthy and self._running
+
+
+    # -------------------------------------------------------------------------
+    # LECTURA DIRECTA DE UN OFFSET
+    # -------------------------------------------------------------------------
+    def leer_offset(self, offset: int, partition: int = 0, timeout_ms: int = 5000):
+        """Lee un offset específico de forma síncrona."""
+        consumer = None
+        try:
+            consumer = KafkaConsumer(
+                bootstrap_servers=KAFKA_BROKER,
+                group_id=self.group_id,
+                enable_auto_commit=False,
+                auto_offset_reset="none",
+                consumer_timeout_ms=timeout_ms
+            )
+
+            tp = TopicPartition(self.topic, partition)
+
+            partitions = consumer.partitions_for_topic(self.topic)
+            if partitions is None:
+                raise RuntimeError(f"El topic '{self.topic}' no existe en el broker {KAFKA_BROKER}")
+            if partition not in partitions:
+                raise RuntimeError(f"La partición {partition} no existe en el topic '{self.topic}'")
+
+            consumer.assign([tp])
+            consumer.seek(tp, offset)
+
+            for msg in consumer:
+                if msg.offset == offset:
+                    return msg
+                elif msg.offset > offset:
+                    break
+
+            return None
+
+        except KafkaConnectionError:
+            raise RuntimeError(f"No se pudo conectar al broker: {KAFKA_BROKER}")
+        except KafkaTimeoutError:
+            raise RuntimeError(f"Timeout al leer offset {offset}")
+        except KafkaError as e:
+            raise RuntimeError(f"Error de Kafka: {e}")
+        finally:
+            if consumer is not None:
+                consumer.close()
 
 
 # ============================================================
