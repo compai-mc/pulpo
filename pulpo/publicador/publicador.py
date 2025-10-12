@@ -1,8 +1,9 @@
 import json
 import os
 import traceback
-from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
+from kafka import KafkaProducer, KafkaAdminClient
+from kafka.admin import NewTopic
+from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
 
 from pulpo.logueador import log
 
@@ -20,42 +21,55 @@ def crear_topico(kafka_broker: str, topic_name: str, num_particiones: int = 1, r
     :return: True si se creó, False si ya existía o hubo error
     """
     try:
-        admin_client = AdminClient({"bootstrap.servers": kafka_broker})
-        cluster_metadata = admin_client.list_topics(timeout=5)
+        admin_client = KafkaAdminClient(bootstrap_servers=kafka_broker)
+        topics_existentes = admin_client.list_topics()
 
-        if topic_name in cluster_metadata.topics:
+        if topic_name in topics_existentes:
             log.info(f"El tópico '{topic_name}' ya existe.")
-            return False  # ya existía
+            return False
 
-        new_topic = NewTopic(topic_name, num_particiones, replication_factor)
-        fs = admin_client.create_topics([new_topic])
+        new_topic = NewTopic(
+            name=topic_name,
+            num_partitions=num_particiones,
+            replication_factor=replication_factor
+        )
 
-        # Esperar confirmación
-        fs[topic_name].result()
+        admin_client.create_topics([new_topic])
         log.info(f"Tópico '{topic_name}' creado correctamente.")
         return True
 
-    except Exception as e:
-        log.error(f"Error al crear el tópico '{topic_name}': {e}")
+    except TopicAlreadyExistsError:
+        log.info(f"El tópico '{topic_name}' ya existía.")
         return False
+    except NoBrokersAvailable:
+        log.error(f"No se pudo conectar al broker '{kafka_broker}'. ¿Está corriendo Kafka?")
+        return False
+    except Exception as e:
+        log.error(f"Error al crear el tópico '{topic_name}': {e}", exc_info=True)
+        return False
+    finally:
+        try:
+            admin_client.close()
+        except Exception:
+            pass
 
 
 class KafkaEventPublisher:
     def __init__(self, broker: str = KAFKA_BROKER):
         self.broker = broker
-        self.producer: Producer | None = None
+        self.producer: KafkaProducer | None = None
 
     def start(self):
         """Inicia el productor de Kafka (síncrono)."""
         try:
             log.info(f"[KafkaEventPublisher] 🔄 Conectando a {self.broker}")
-            self.producer = Producer({
-                "bootstrap.servers": self.broker,
-                "acks": "all",
-                "enable.idempotence": True,
-                "request.timeout.ms": 10000,
-                "message.timeout.ms": 15000
-            })
+            self.producer = KafkaProducer(
+                bootstrap_servers=self.broker,
+                acks="all",
+                retries=3,
+                linger_ms=10,
+                value_serializer=lambda v: json.dumps(v).encode("utf-8")
+            )
             log.info("[KafkaEventPublisher] ✅ Productor conectado correctamente.")
         except Exception as e:
             tb = traceback.format_exc()
@@ -71,6 +85,7 @@ class KafkaEventPublisher:
             except Exception as e:
                 log.error(f"Error al detener productor: {e}")
             finally:
+                self.producer.close()
                 self.producer = None
 
     def publish(self, topic: str, message: dict):
@@ -80,45 +95,28 @@ class KafkaEventPublisher:
         if not self.producer:
             raise RuntimeError("❌ El productor no está iniciado. Llama a start() antes de publicar.")
 
-        # Asegurar que el tópico existe
         crear_topico(self.broker, topic)
 
-        message_str = json.dumps(message)
-
-        def delivery_report(err, msg):
-            if err is not None:
-                log.error(f"❌ Error publicando en '{topic}': {err}")
-            else:
-                log.debug(f"📤 Mensaje publicado en '{msg.topic()}' [part {msg.partition()}] offset {msg.offset()}")
-
         try:
-            self.producer.produce(
-                topic,
-                value=message_str.encode("utf-8"),
-                callback=delivery_report
-            )
-            self.producer.flush()  # Espera a que se confirme el envío
+            future = self.producer.send(topic, message)
+            result = future.get(timeout=10)
+            log.debug(f"📤 Mensaje publicado en '{result.topic}' [part {result.partition}] offset {result.offset}")
         except Exception as e:
-            log.error(f"Error publicando en tópico '{topic}': {e}", exc_info=True)
+            log.error(f"❌ Error publicando en tópico '{topic}': {e}", exc_info=True)
 
     def publish_commit(self, topic: str, message: dict):
         """
-        Simula un envío 'transaccional' (bloqueante + confirmación),
-        aunque confluent_kafka requiere configuración avanzada para transacciones reales.
+        Simula un envío 'transaccional' (bloqueante + confirmación).
         """
         if not self.producer:
             raise RuntimeError("El productor no está iniciado.")
 
         try:
-            message_str = json.dumps(message)
-            self.producer.produce(
-                topic,
-                value=message_str.encode("utf-8")
-            )
-            self.producer.flush()
-            log.info(f"✅ Mensaje 'transaccional' publicado en '{topic}'.")
+            future = self.producer.send(topic, message)
+            result = future.get(timeout=10)
+            log.info(f"✅ Mensaje 'transaccional' publicado en '{result.topic}' offset {result.offset}")
         except Exception as e:
-            log.error(f"❌ Error en publicación transaccional: {e}")
+            log.error(f"❌ Error en publicación transaccional: {e}", exc_info=True)
 
 
 # ========================================================
@@ -129,7 +127,7 @@ if __name__ == "__main__":
     publisher = KafkaEventPublisher()
     publisher.start()
 
-    mensaje = {"id": 1, "texto": "Hola Kafka síncrono"}
+    mensaje = {"id": 1, "texto": "Hola Kafka con kafka-python"}
     publisher.publish("prueba_topic", mensaje)
 
     publisher.stop()
