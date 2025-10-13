@@ -82,6 +82,9 @@ class KafkaEventConsumer:
         self._last_commit_time = time.time()
         self._pending_offsets: Dict[TopicPartition, int] = {}
         
+        self._lock = threading.Lock()                    
+        self.enable_auto_commit = False   
+
         # Métricas
         self.metrics = {
             "messages_processed": 0,
@@ -407,22 +410,66 @@ class KafkaEventConsumer:
 
     def _restart_consumer(self):
         try:
-            if self._consumer:
-                self._consumer.close()
-                log.info("🧹 Consumidor cerrado correctamente")
+            with self._lock:
+                if self._consumer:
+                    try:
+                        self._consumer.close()
+                        log.info("🧹 Consumidor cerrado correctamente")
+                    except Exception:
+                        pass
+                    self._consumer = None
+
             time.sleep(2)
 
-            self._consumer = KafkaConsumer(
+            # Crear un nuevo consumidor usando los atributos correctos
+            new_consumer = KafkaConsumer(
                 self.topic,
-                bootstrap_servers=self.broker,
+                bootstrap_servers=self.bootstrap_servers,   # <--- usar bootstrap_servers correcto
                 group_id=self.group_id,
-                enable_auto_commit=self.enable_auto_commit,
+                enable_auto_commit=self.enable_auto_commit,  # <--- atributo definido en __init__
                 auto_offset_reset=self.auto_offset_reset,
+                session_timeout_ms=self.session_timeout_ms,
+                heartbeat_interval_ms=self.heartbeat_interval_ms,
+                max_poll_interval_ms=self.max_poll_interval_ms,
+                value_deserializer=lambda m: m,
+                key_deserializer=lambda k: k.decode("utf-8") if k else None,
             )
-            self._consumer.subscribe([self.topic])
-            log.info("🔄 Consumidor reiniciado y resuscrito al tópico")
+
+            with self._lock:
+                self._consumer = new_consumer
+
+            log.info("🔄 Consumidor reiniciado (nuevo KafkaConsumer creado).")
+            # No forzar subscribe si ya pasaste topic al constructor; pero asegurar subscribe no hace daño:
+            try:
+                self._consumer.subscribe([self.topic])
+            except Exception:
+                # algunos clientes cuando se construyen con topics ya inscritos no necesitan subscribe
+                pass
+
         except Exception as e:
-            log.error(f"❌ Error al reiniciar el consumidor: {e}")
+            log.error(f"❌ Error al reiniciar el consumidor: {e}", exc_info=True)
+
+
+    def wait_until_assigned(self, timeout: int = 10) -> bool:
+        """Espera hasta que el consumidor tenga una asignación de particiones."""
+        start = time.time()
+        while True:
+            with self._lock:
+                consumer = self._consumer
+            if consumer:
+                try:
+                    # assignment() puede devolver set() inicialmente
+                    assignment = consumer.assignment()
+                    if assignment:
+                        return True
+                except Exception:
+                    # si consumer todavía no está totalmente inicializado, ignorar y reintentar
+                    pass
+            if time.time() - start > timeout:
+                return False
+            time.sleep(0.2)
+
+
 
     def _cleanup(self):
         """Limpia recursos al detener."""
@@ -447,12 +494,12 @@ class KafkaEventConsumer:
     # CONTROL DEL CONSUMIDOR
     # ============================================================
 
+
     def start(self):
-        """Inicia el consumidor en un hilo."""
         if self._running:
             log.warning("⚠️ El consumidor ya está en ejecución")
             return
-        
+
         self._running = True
         self._thread = threading.Thread(
             target=self._consume_loop,
@@ -461,6 +508,14 @@ class KafkaEventConsumer:
         )
         self._thread.start()
         log.info(f"✅ [{self.group_id}] Hilo de consumo iniciado")
+
+        # Esperar a que el consumer se cree y obtenga asignación de particiones
+        ready = self.wait_until_assigned(timeout=15)
+        if ready:
+            log.info(f"✅ [{self.group_id}] Consumidor listo y asignado.")
+        else:
+            log.warning(f"⚠️ [{self.group_id}] Timeout esperando asignación (start).")
+
 
     def stop(self, timeout: int = 10):
         """Detiene el consumidor de forma ordenada."""
@@ -478,13 +533,33 @@ class KafkaEventConsumer:
         
         log.info(f"✅ [{self.group_id}] Consumidor detenido")
 
-    def poll(self, timeout_ms: int = 1000):
+    def poll2(self, timeout_ms: int = 1000):
         """Permite hacer polling manual si se desea."""
         if self._consumer:
             return self._consumer.poll(timeout_ms=timeout_ms)
         else:
             log.error("❌ Consumidor no inicializado")
             return {}
+
+
+    def poll(self, timeout_ms: int = 1000, wait_ready: bool = False):
+        if wait_ready:
+            if not self.wait_until_assigned(timeout=10):
+                log.error("❌ Timeout esperando inicialización y asignación del consumidor")
+                return {}
+
+        with self._lock:
+            consumer = self._consumer
+
+        if not consumer:
+            log.error("❌ Consumidor no inicializado")
+            return {}
+
+        try:
+            return consumer.poll(timeout_ms=timeout_ms)
+        except AssertionError as e:
+            log.error(f"❌ Poll falló: {e}")
+            return {}     
 
     def get_metrics(self) -> Dict[str, Any]:
         """Retorna las métricas del consumidor."""
