@@ -1,10 +1,9 @@
 import asyncio
-import requests
-import proxy_forecast
 import os
 from datetime import datetime,date
 
-import proxy_orquestator_flow
+from .proxy_forecast import generar_forecast_minio
+from .proxy_orquestator_flow import create_card
 
 TABLERO_OPERACIONES = os.getenv("TABLERO_OPERACIONES","EQyBuWaxdzT9HgwCH")  
 LISTA_NOTIFICACIONES = os.getenv("LISTA_NOTIFICACIONES","Notificaciones")  
@@ -14,7 +13,7 @@ def _crear_tarea_wekan(mensaje: str):
     """Crea una tarea en Wekan vía API REST (síncrono)."""
     print(f"📌 Creando tarea en Wekan: {mensaje}")
     
-    json_respuesta = proxy_orquestator_flow.create_card(
+    json_respuesta = create_card(
                     board_id=TABLERO_OPERACIONES,
                     title=mensaje,
                     description="Informe de previsión de ventas",
@@ -48,7 +47,7 @@ async def _forecast_en_background(fecha: str):
     fecha_iso = fecha_obj.date().isoformat()
 
     # Ejecuta forecast async
-    resultado = await proxy_forecast.generar_forecast_minio(fecha_iso) 
+    resultado = await generar_forecast_minio(fecha_iso) 
 
     # Parseamos la fecha del forecast (en ISO)
     try:
