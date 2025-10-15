@@ -2,12 +2,13 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="3.1.4",
+    version="4.0",
     packages=find_packages(),
     install_requires=[
         "requests", 
         "pyjwt",
         "python-arango",
-        "kafka-python"
+        "kafka-python",
+        "langroid"
     ],
 )
