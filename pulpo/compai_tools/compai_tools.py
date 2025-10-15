@@ -5,8 +5,8 @@ from langroid.pydantic_v1 import BaseModel, Field
 import langroid as lr
 from langroid.agent.tools.orchestration import FinalResultTool
 
-from proxy_proccess_controler import ProccessControlerProxy
-from ejecucion_forecast import ejecucion_forecast
+from .proxy_proccess_controler import ProccessControlerProxy
+from .ejecucion_forecast import ejecucion_forecast
 
 
 # --------------------------------------------------------------------
