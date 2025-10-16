@@ -563,7 +563,7 @@ class KafkaEventConsumer:
         """Hilo en background para mantener vivo el consumidor Kafka."""
         while self._mantener_polling:
             try:
-                self.consumidor.poll(0)
+                self.poll(0)
             except Exception as e:
                 print(f"⚠️ Error en poll: {e}")
             time.sleep(1)  # poll cada segundo es suficiente
