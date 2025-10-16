@@ -74,7 +74,7 @@ class ProductosTool(lr.agent.ToolMessage):
                 info={
                     "productos": [],
                     "mensaje": "No encuentro nada relacionado con ese producto.",
-                    "mode": "workflow"
+                    "mode": "online"
                 }
             )
 
@@ -102,7 +102,10 @@ class ProductosTool(lr.agent.ToolMessage):
 # 🔧 Registro en el agente
 # --------------------------------------------------------------------
 
-def register_tools(agent):
+def register_all_tools(agent):
     """Activa las herramientas en un agente Langroid."""
     agent.enable_message(ForecastTool)
     agent.enable_message(ProductosTool)
+
+def register_tool(agent, tool):
+    agent.enable_message(tool)
