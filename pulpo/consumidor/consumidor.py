@@ -85,6 +85,9 @@ class KafkaEventConsumer:
         self._lock = threading.Lock()                    
         self.enable_auto_commit = False   
 
+        self._mantener_polling = False  # Control del hilo de polling
+        self._hilo_poll = None
+
         # Métricas
         self.metrics = {
             "messages_processed": 0,
@@ -533,34 +536,53 @@ class KafkaEventConsumer:
         
         log.info(f"✅ [{self.group_id}] Consumidor detenido")
 
-    def poll2(self, timeout_ms: int = 1000):
-        """Permite hacer polling manual si se desea."""
-        if self._consumer:
-            return self._consumer.poll(timeout_ms=timeout_ms)
-        else:
-            log.error("❌ Consumidor no inicializado")
-            return {}
-
 
     def poll(self, timeout_ms: int = 1000, wait_ready: bool = False):
         if wait_ready:
             if not self.wait_until_assigned(timeout=10):
                 log.error("❌ Timeout esperando inicialización y asignación del consumidor")
-                return {}
+                return {"status": "error", "message": "Timeout esperando asignación de particiones"}
 
         with self._lock:
             consumer = self._consumer
 
         if not consumer:
-            log.error("❌ Consumidor no inicializado")
-            return {}
+            #log.error("❌ Consumidor no inicializado")
+            return {"status": "error", "message": "No hay consumidor inicializado"}
 
         try:
-            return consumer.poll(timeout_ms=timeout_ms)
+            consumer.poll(timeout_ms=timeout_ms)
+            return {"status": "ok", "message": "Polling realizado correctamente"}
         except AssertionError as e:
             log.error(f"❌ Poll falló: {e}")
-            return {}     
+            return  {"status": "error", "message": str(e)}  
 
+
+
+    def _mantener_consumidor_vivo(self):
+        """Hilo en background para mantener vivo el consumidor Kafka."""
+        while self._mantener_polling:
+            try:
+                self.consumidor.poll(0)
+            except Exception as e:
+                print(f"⚠️ Error en poll: {e}")
+            time.sleep(1)  # poll cada segundo es suficiente
+
+    def iniciar_polling_background(self):
+        """Inicia el hilo de polling."""
+        self._mantener_polling = True
+        self._hilo_poll = threading.Thread(target=self._mantener_consumidor_vivo, daemon=True)
+        self._hilo_poll.start()
+
+    def detener_polling_background(self):
+        """Detiene el hilo de polling."""
+        self._mantener_polling = False
+        if hasattr(self, "_hilo_poll"):
+            self._hilo_poll.join(timeout=2)
+
+
+
+        
     def get_metrics(self) -> Dict[str, Any]:
         """Retorna las métricas del consumidor."""
         return {
