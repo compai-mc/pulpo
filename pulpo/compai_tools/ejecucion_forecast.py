@@ -28,6 +28,7 @@ def _crear_tarea_wekan(mensaje: str):
 
 async def _forecast_en_background(fecha: str):
 
+
     # Normalizar fecha a formato ISO (YYYY-MM-DD)
     try:
         # Intentamos parsear directamente
@@ -64,25 +65,30 @@ async def _forecast_en_background(fecha: str):
     🔗 Descargar Excel: [Haz clic aquí]({resultado["download_url"]})
     """
 
-    #loop = asyncio.get_running_loop()
-    #await loop.run_in_executor(None, _crear_tarea_wekan, mensaje)
-
     _crear_tarea_wekan(mensaje)
 
     print( f"Forecast completado para {fecha_iso} en {resultado}")
 
     
-async def ejecucion_forecast(fecha: str):
-    # Lanzar forecast en paralelo (no bloquea flujo principal)
-    tarea = asyncio.create_task(_forecast_en_background(fecha))
-    print("Generandose el forecast .....")
+def ejecucion_forecast(fecha: str) -> str:
+    """
+    Función síncrona que ejecuta tarea asíncrona en un nuevo event loop
+    """
+    def _lanzar_background():
+        """Lanza la tarea asíncrona en un nuevo event loop"""
+        asyncio.run(_forecast_en_background(fecha))
+    
+    # Ejecutar en un hilo separado para no bloquear
+    import threading
+    thread = threading.Thread(target=_lanzar_background)
+    thread.daemon = True  # Para que no impida la salida del programa
+    thread.start()
+    
+    return f"Procesamiento iniciado para {fecha}"
 
-    #resultado = await tarea
 
-    return (
-        "Ejecutando la previsión de ventas que has pedido. "
-        "Te llegará una tarea a tu workflow cuando haya terminado."
-    )
+
+
 
 if __name__ == "__main__":
     fecha = "2025-09-07"

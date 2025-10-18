@@ -25,21 +25,30 @@ class ForecastTool(lr.agent.ToolMessage):
     @classmethod
     def examples(cls):
         return [
-            cls(params=ForecastRequest(fecha="2025-10-15")),
             (
-                "Quiero el forecast energético para hoy",
+                "Usuario pidió 'forecast para hoy' (palabra clave: forecast), ejecuto ejecucion_forecast UNA VEZ",
                 cls(params=ForecastRequest(fecha=None)),
+            ),
+            (
+                "Cliente quiere 'informe de previsión del mes pasado' (sinónimo de forecast), ejecuto herramienta UNA VEZ",
+                cls(params=ForecastRequest(fecha="2025-01-16")),
+            ),
+            (
+                "Usuario mencionó 'previsión mañana' (palabras clave: previsión + fecha), ejecuto automáticamente UNA VEZ",
+                cls(params=ForecastRequest(fecha="2025-01-16")),
             ),
         ]
 
-    async def handle(self) -> FinalResultTool:
+    def handle(self) -> FinalResultTool:
         fecha = self.params.fecha or date.today().isoformat()
-        forecast = await ejecucion_forecast(fecha)
+        forecast = ejecucion_forecast(fecha)
         return FinalResultTool(
             info={
                 "fecha": fecha,
-                "resultado": forecast,
-                "mode": "workflow"
+                "respuesta": "Te envio una tarea al workflow con el documento solicitado.",
+                "mode": "workflow",
+                "status": "completado",
+                "reejecutar": False 
             }
         )
 
@@ -60,10 +69,21 @@ class ProductosTool(lr.agent.ToolMessage):
     @classmethod
     def examples(cls):
         return [
-            cls(params=ProductosRequest(productos=["cable de red", "router"])),
             (
-                "Encuentra productos parecidos a 'batería solar'",
-                cls(params=ProductosRequest(productos=["batería solar"])),
+                "Usuario mencionó 'ONT' (producto tecnológico), ejecuto find_similar_products",
+                cls(params=ProductosRequest(productos=["ONT"])),
+            ),
+            (
+                "Cliente preguntó por 'router Cisco' (palabra clave: router), ejecuto herramienta",
+                cls(params=ProductosRequest(productos=["router Cisco"])),
+            ),
+            (
+                "Usuario dijo 'necesito cables KP' (producto tecnológico), ejecuto automáticamente",
+                cls(params=ProductosRequest(productos=["baterías solares"])),
+            ),
+            (
+                "Usuario pidió 'alternativas a switch' (sinónimo de productos similares), ejecuto tool",
+                cls(params=ProductosRequest(productos=["switch"])),
             ),
         ]
 
@@ -72,15 +92,18 @@ class ProductosTool(lr.agent.ToolMessage):
         if not productos:
             return FinalResultTool(
                 info={
-                    "productos": [],
+                    "respuesta": [],
                     "mensaje": "No encuentro nada relacionado con ese producto.",
-                    "mode": "online"
+                    "mode": "online",
+                    "status": "completado",
+                    "reejecutar": False 
                 }
             )
 
         pc = ProccessControlerProxy()
-        similitudes = pc.find_similar_producto(
-            productos,
+        similitudes = pc.similarity_product(
+            query = productos,
+            codigo = "",
             numero_resultados=7,
             min_score=0.1
         )["results"]
@@ -92,7 +115,7 @@ class ProductosTool(lr.agent.ToolMessage):
 
         return FinalResultTool(
             info={
-                "productos": productos_filtrados,
+                "respuesta": productos_filtrados,
                 "mode": "online"
             }
         )
