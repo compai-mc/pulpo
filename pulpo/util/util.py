@@ -2,41 +2,8 @@ import json
 import re
 import ast
 from json.decoder import scanstring
-
-def old_arreglar_json(json_str: str):
-    # 1. Primer intento: cargar tal cual
-    try:
-        return json.loads(json_str)
-    except Exception:
-        pass
-
-    fixed = json_str
-
-    # 2. Parches comunes
-    fixed = fixed.replace("'", '"')             # comillas simples → dobles
-    fixed = fixed.replace("None", "null")       # None → null
-    fixed = fixed.replace("True", "true")       # True → true
-    fixed = fixed.replace("False", "false")     # False → false
-    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # eliminar coma final antes de ] o }
-
-    # 3. Intentar de nuevo con json estándar
-    try:
-        return json.loads(fixed)
-    except Exception:
-        pass
-
-    # 4. Intentar con json5 si está instalado
-    try:
-        import json5
-        return json5.loads(json_str)
-    except Exception:
-        pass
-
-    # 5. Último recurso: ast.literal_eval (convierte a dict de Python)
-    try:
-        return ast.literal_eval(json_str)
-    except Exception as e:
-        raise ValueError(f"No se pudo reparar el JSON: {e}")
+import importlib
+from pathlib import Path
 
 
 def extraer_json_del_texto(texto: str) -> dict:
@@ -133,6 +100,66 @@ def extraer_json_del_texto(texto: str) -> dict:
                         pass  # si no parsea, lo dejamos como está
 
         return data
+
+
+
+def cargar_config(ruta_config: str | Path) -> dict:
+    """
+    Carga un JSON desde disco y reemplaza las listas bajo la clave 'string-classes'
+    por la clave 'classes' con las clases reales importadas dinámicamente.
+    """
+    ruta = Path(ruta_config)
+    if not ruta.exists():
+        raise FileNotFoundError(f"No se encontró el archivo de configuración: {ruta}")
+
+    # Leer el JSON
+    with open(ruta, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    # Función auxiliar para importar una clase desde su nombre completo
+    def _importar_clase(nombre_clase: str):
+        modulo, clase = nombre_clase.rsplit(".", 1)
+        mod = importlib.import_module(modulo)
+        return getattr(mod, clase)
+
+    # Función recursiva que reemplaza todas las apariciones de "string-classes"
+    def _procesar_nodo(nodo):
+        if isinstance(nodo, dict):
+            # Si el nodo tiene la clave "string-classes"
+            if "string-classes" in nodo:
+                clases_importadas = []
+                for nombre_clase in nodo["string-classes"]:
+                    try:
+                        clases_importadas.append(_importar_clase(nombre_clase))
+                    except Exception as e:
+                        raise ImportError(f"No se pudo importar {nombre_clase}: {e}") from e
+
+                nodo["classes"] = clases_importadas
+                del nodo["string-classes"]
+
+            # Recorrer los valores del diccionario
+            for k, v in nodo.items():
+                _procesar_nodo(v)
+
+        elif isinstance(nodo, list):
+            for item in nodo:
+                _procesar_nodo(item)
+
+    # Procesar todo el JSON
+    _procesar_nodo(config)
+
+    return config
+
+
+
+if __name__ == "__main__":
+
+    cfg = cargar_config("app/config.json")
+
+    print(cfg["agents"]["agente_herramientas"]["tools"]["classes"])
+
+
+
 
 
 #### Pruebas ##########################
