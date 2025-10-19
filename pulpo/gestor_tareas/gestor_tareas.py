@@ -138,8 +138,7 @@ class GestorTareas:
     def add_job(self, tasks: list[dict], job_id: str = None):
         """Añade tareas a un job (nuevo o existente) y publica mensajes de inicio."""
         if not tasks:
-            log.warning("[GestorTareas] Intento de crear un job sin tareas")
-            return None
+            log.debug("[GestorTareas] Intento de crear un job sin tareas")
 
         job_id = job_id or str(uuid.uuid4())
         nuevas_tareas = []
