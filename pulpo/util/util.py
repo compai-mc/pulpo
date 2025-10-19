@@ -117,11 +117,22 @@ def extraer_json_del_texto(texto: str) -> dict:
 
         # 8. Último recurso: ast.literal_eval
         try:
-            return ast.literal_eval(fixed)
+            data = ast.literal_eval(fixed)
         except Exception as e:
             raise ValueError(f"No se pudo reparar el JSON: {e}\nTexto:\n{fixed}")
 
 
+        # ✅ 9. Reparar JSONs anidados en strings (como "interpretacion")
+        for k, v in list(data.items()):
+            if isinstance(v, str):
+                v_str = v.strip()
+                if v_str.startswith("{") and v_str.endswith("}"):
+                    try:
+                        data[k] = json.loads(v_str)
+                    except Exception:
+                        pass  # si no parsea, lo dejamos como está
+
+        return data
 
 
 #### Pruebas ##########################
