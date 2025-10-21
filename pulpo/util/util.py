@@ -103,29 +103,22 @@ def extraer_json_del_texto(texto: str) -> dict:
 
 
 
-def cargar_config(ruta_config: str | Path) -> dict:
-    """
-    Carga un JSON desde disco y reemplaza las listas bajo la clave 'string-classes'
-    por la clave 'classes' con las clases reales importadas dinámicamente.
-    """
+def cargar_config(ruta_config: str | Path, cargar_clases: bool = True) -> dict:
     ruta = Path(ruta_config)
     if not ruta.exists():
         raise FileNotFoundError(f"No se encontró el archivo de configuración: {ruta}")
 
-    # Leer el JSON
     with open(ruta, "r", encoding="utf-8") as f:
         config = json.load(f)
 
-    # Función auxiliar para importar una clase desde su nombre completo
     def _importar_clase(nombre_clase: str):
         modulo, clase = nombre_clase.rsplit(".", 1)
         mod = importlib.import_module(modulo)
-        return getattr(mod, clase)
+        clase_obj = getattr(mod, clase)
+        return clase_obj  # 👈 devuelve la clase, no la instancia
 
-    # Función recursiva que reemplaza todas las apariciones de "string-classes"
     def _procesar_nodo(nodo):
         if isinstance(nodo, dict):
-            # Si el nodo tiene la clave "string-classes"
             if "string-classes" in nodo:
                 clases_importadas = []
                 for nombre_clase in nodo["string-classes"]:
@@ -137,19 +130,17 @@ def cargar_config(ruta_config: str | Path) -> dict:
                 nodo["classes"] = clases_importadas
                 del nodo["string-classes"]
 
-            # Recorrer los valores del diccionario
             for k, v in nodo.items():
                 _procesar_nodo(v)
-
         elif isinstance(nodo, list):
             for item in nodo:
                 _procesar_nodo(item)
 
-    # Procesar todo el JSON
-    _procesar_nodo(config)
+    # 🔁 Solo procesar si se pidió
+    if cargar_clases:
+        _procesar_nodo(config)
 
     return config
-
 
 
 if __name__ == "__main__":
