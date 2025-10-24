@@ -1,5 +1,6 @@
 from datetime import date
 from typing import List, Optional, Dict, Any
+import os
 
 from langroid.pydantic_v1 import BaseModel, Field
 import langroid as lr
@@ -8,6 +9,16 @@ from langroid.agent import ToolMessage
 
 from .proxy_proccess_controler import ProccessControlerProxy
 from .ejecucion_forecast import ejecucion_forecast
+
+from proposal import ProposalMicroserviceClient
+from proxy_correo import CorreoClient
+import manager_historia
+from proxy_erpdolibarr import ERPProxy
+
+
+URL_ERP = os.getenv("URL_ERP", "http://alcazar:7404")
+URL_PROPOSAL = os.getenv("URL_PROPOSAL", "http://alcazar:7201")
+URL_CORREO = os.getenv("URL_CORREO", "http://alcazar:7477")
 
 
 # --------------------------------------------------------------------
@@ -123,14 +134,14 @@ class ProductosTool(lr.agent.ToolMessage):
 
 
 # --------------------------------------------------------------------
-# 🔮 TOOL 3: Proposal
+# 🔮 TOOL 3: Propuesta
 # --------------------------------------------------------------------
 
 class PropuestaERPRequest(BaseModel):
     historia: Dict[str, Any] = Field(..., description="Diccionario con la historia  del mensaje.")
 
 
-class PropuestaERPTool(ToolMessage):
+class PropuestaERPTool(lr.agent.ToolMessage):
     request: str = "create_erp_proposal"
     purpose: str = "Genera una propuesta en el ERP a partir de la historia de interpretación de un mensaje."
     params: PropuestaERPRequest
@@ -174,12 +185,19 @@ class PropuestaERPTool(ToolMessage):
                 }
             )
 
-        # Aquí iría la integración real con tu ERP
-        # por ejemplo a través de un proxy o API.
-        from integrations.erp_proxy import ERPProxy  # ejemplo de proxy
+        manager = manager_historia.HistoriaManager(historia)
+        interpretacion_procesada = manager.crear_json_humano()
 
-        erp = ERPProxy()
-        resultado = erp.crear_propuesta(historia)
+        prop = ProposalMicroserviceClient()
+        resultado = prop.crear_proposal_desde_historia(interpretacion_procesada)
+
+        print(f"✅ Propuesta creada con ID {resultado['proposal_id']}")
+
+        # Generar y recuperar el PDF de la propuesta
+        proposal = f"(PROV{resultado['proposal_id']})"
+        erp = ERPProxy(URL_ERP)
+        response = erp.proposal_create_document(proposal)
+        pdf_base64 = response["content_base64"]
 
         if not resultado.get("success", False):
             return FinalResultTool(
@@ -195,6 +213,7 @@ class PropuestaERPTool(ToolMessage):
         return FinalResultTool(
             info={
                 "respuesta": resultado,
+                "adjunto": pdf_base64,
                 "mensaje": "Propuesta creada correctamente en el ERP.",
                 "mode": "online",
                 "status": "completado",
@@ -220,7 +239,7 @@ class EnviarCorreoRequest(BaseModel):
     adjuntos: List[CorreoAdjunto] = Field(default_factory=list, description="Lista de adjuntos en formato Base64.")
 
 
-class EnviarCorreoTool(ToolMessage):
+class EnviarCorreoTool(lr.agent.ToolMessage):
     request: str = "send_email"
     purpose: str = "Envía un correo electrónico con el asunto, cuerpo y adjuntos especificados."
     params: EnviarCorreoRequest
@@ -253,6 +272,22 @@ class EnviarCorreoTool(ToolMessage):
                 ))
             ),
         ]
+    
+    # 💬 Aquí defines tu generador de cuerpo de correo usando el LLM del agente
+    def generar_body(self) -> str:
+        if not self.agent:
+            raise RuntimeError("El agente no está disponible en la tool.")
+        
+        data = self.params
+        prompt = f"""
+        Escribe un correo profesional y amable con los siguientes datos:
+        - Asunto: {data.asunto}
+        - Contexto: {data.mensaje}
+        - Destinatario: {data.destinatario}
+        El correo debe tener tono formal y ser breve.
+        """
+        respuesta = self.agent.llm_response(prompt)
+        return respuesta.message.strip()
 
     def handle(self) -> FinalResultTool:
         data = self.params
@@ -268,19 +303,22 @@ class EnviarCorreoTool(ToolMessage):
                 }
             )
 
-        # Aquí iría la lógica real de envío de correo
-        # por ejemplo, utilizando un proxy o un servicio SMTP/API.
-        from integrations.mail_proxy import MailProxy  # ejemplo de integración
+            # Pensar / generar respuesta
+        #pienso = proxy_client_manager.think(synth_id, interpretacion_procesada)
+        #respuesta = agente.llm_response(mensaje_con_contexto)
+        #lr.agent.ToolMessage
 
-        mailer = MailProxy()
-        resultado = mailer.enviar_correo(
-            destinatario=data.destinatario,
-            asunto=data.asunto,
-            mensaje=data.mensaje,
-            adjuntos=[
-                (a.nombre, a.contenido_base64, a.tipo_mime)
-                for a in data.adjuntos
-            ]
+        #body = pienso["resultado"]["analista_1"][0]
+        #print("🧠 Correo generado correctamente")
+
+        body = self.generar_body()
+
+        correo_cli = CorreoClient(URL_CORREO)
+        resultado = correo_cli.enviar_correo(
+            destinatario="peperedondorubio@gmail.com",
+            asunto="Propuesta para empresa",
+            mensaje=body,
+            adjuntos=[("propuesta.pdf", data.adjuntos, "application/pdf")]
         )
 
         if not resultado.get("success", False):
@@ -305,18 +343,9 @@ class EnviarCorreoTool(ToolMessage):
         )
 
 
-
-
-
-
 # --------------------------------------------------------------------
 # 🔮 TOOL 5: Genera y envia Proposal por correo
 # --------------------------------------------------------------------
-
-
-from tools.propuesta_erp_tool import PropuestaERPTool, PropuestaERPRequest
-from tools.enviar_correo_tool import EnviarCorreoTool, EnviarCorreoRequest, CorreoAdjunto
-
 
 class EnviarPropuestaRequest(BaseModel):
     historia: Dict[str, Any] = Field(..., description="Historia interpretativa del mensaje para generar la propuesta.")
@@ -357,7 +386,10 @@ class EnviarPropuestaTool(ToolMessage):
         # ======================================================
         # 1️⃣ Crear la propuesta usando la tool PropuestaERPTool
         # ======================================================
-        propuesta_tool = PropuestaERPTool(params=PropuestaERPRequest(historia=data.historia))
+        propuesta_tool = PropuestaERPTool(
+            params=PropuestaERPRequest(historia=data.historia)
+        )
+        propuesta_tool.agent = self.agent  # 🔥 Mismo LLM y contexto
         resultado_propuesta = propuesta_tool.handle().info
 
         if resultado_propuesta.get("status") == "error":
@@ -371,26 +403,11 @@ class EnviarPropuestaTool(ToolMessage):
                 }
             )
 
-        # ======================================================
-        # 2️⃣ Generar PDF de la propuesta (usando tu proxy o ya incluido en la propuesta)
-        # ======================================================
-        try:
-            from integrations.pdf_proxy import PDFProxy
-            pdf = PDFProxy()
-            pdf_base64 = pdf.generar_pdf_propuesta(resultado_propuesta)
-        except Exception as e:
-            return FinalResultTool(
-                info={
-                    "respuesta": resultado_propuesta,
-                    "mensaje": f"Error al generar PDF: {e}",
-                    "mode": "online",
-                    "status": "error",
-                    "reejecutar": False
-                }
-            )
+        # Aquí ya tienes el PDF en base64 dentro del resultado
+        pdf_base64 = resultado_propuesta.get("adjunto")
 
         # ======================================================
-        # 3️⃣ Enviar el correo usando la tool EnviarCorreoTool
+        # 2️⃣ Enviar el correo usando la tool EnviarCorreoTool
         # ======================================================
         if data.enviar_correo:
             correo_tool = EnviarCorreoTool(
@@ -407,6 +424,7 @@ class EnviarPropuestaTool(ToolMessage):
                     ]
                 )
             )
+            correo_tool.agent = self.agent  # 🔥 Misma instancia de LLM
             resultado_correo = correo_tool.handle().info
 
             if resultado_correo.get("status") == "error":
