@@ -4,19 +4,22 @@ import os
 
 FORECAST_URL = os.getenv("FORECAST_URL") 
 
-def _float_env(var_name: str, default: float) -> float:
+def _float_env(var_name: str) -> float | None:
+    """
+    Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
+    """
     value = os.getenv(var_name)
     if value is None:
-        return default
+        print(f"ℹ️ {var_name} no definida.")
+        return None
     try:
         return float(value)
     except ValueError:
-        print(f"⚠️ Valor inválido para {var_name}: {value}. Usando {default}.")
-        return default
+        print(f"⚠️ Valor inválido para {var_name}: '{value}'.")
+        return None
 
-
-FORECAST_TIMEOUT_TOTAL = _float_env("FORECAST_TIMEOUT_TOTAL", 200.0)
-FORECAST_TIMEOUT_READ = _float_env("FORECAST_TIMEOUT_READ", 200.0)
+FORECAST_TIMEOUT_TOTAL = _float_env("FORECAST_TIMEOUT_TOTAL")
+FORECAST_TIMEOUT_READ = _float_env("FORECAST_TIMEOUT_READ")
 
 async def generar_forecast_minio(
     fecha: str,

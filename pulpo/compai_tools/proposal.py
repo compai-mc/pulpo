@@ -6,19 +6,23 @@ from datetime import datetime, timedelta
 from arango import ArangoClient
 from typing import Dict, List, Any, Optional
 
-def _float_env(var_name: str, default: float) -> float:
+def _float_env(var_name: str) -> float | None:
+    """
+    Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
+    """
     value = os.getenv(var_name)
     if value is None:
-        return default
+        print(f"ℹ️ {var_name} no definida.")
+        return None
     try:
         return float(value)
     except ValueError:
-        print(f"⚠️ Valor inválido para {var_name}: {value}. Usando {default}.")
-        return default
+        print(f"⚠️ Valor inválido para {var_name}: '{value}'.")
+        return None
 
 
-PROPOSAL_HEALTH_TIMEOUT = _float_env(os.getenv("PROPOSAL_HEALTH_TIMEOUT"),5)
-PROPOSAL_REQUEST_TIMEOUT = _float_env(os.getenv("PROPOSAL_REQUEST_TIMEOUT"),30)
+PROPOSAL_HEALTH_TIMEOUT = _float_env("PROPOSAL_HEALTH_TIMEOUT")
+PROPOSAL_REQUEST_TIMEOUT = _float_env("PROPOSAL_REQUEST_TIMEOUT")
 
 URL_DOLIBARR = os.getenv('URL_DOLIBARR')
 API_KEY_DOLIBARR= os.getenv('API_KEY_DOLIBARR')

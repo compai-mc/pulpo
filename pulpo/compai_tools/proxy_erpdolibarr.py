@@ -3,15 +3,19 @@ import asyncio
 import os
 from typing import Any, Dict, Optional, List, Union
 
-def _float_env(var_name: str, default: float) -> float:
+def _float_env(var_name: str) -> float | None:
+    """
+    Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
+    """
     value = os.getenv(var_name)
     if value is None:
-        return default
+        print(f"ℹ️ {var_name} no definida.")
+        return None
     try:
         return float(value)
     except ValueError:
-        print(f"⚠️ Valor inválido para {var_name}: {value}. Usando {default}.")
-        return default
+        print(f"⚠️ Valor inválido para {var_name}: '{value}'.")
+        return None
 
 
 ERP_TIMEOUT_CONNECT = _float_env("ERP_TIMEOUT_CONNECT")
