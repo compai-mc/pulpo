@@ -16,11 +16,10 @@ def _float_env(var_name: str, default: float) -> float:
         return default
 
 
-ERP_TIMEOUT_CONNECT = _float_env("ERP_TIMEOUT_CONNECT", 30.0)
-ERP_TIMEOUT_READ = _float_env("ERP_TIMEOUT_READ", 300.0)
-ERP_TIMEOUT_WRITE = _float_env("ERP_TIMEOUT_WRITE", 60.0)
-ERP_TIMEOUT_POOL = _float_env("ERP_TIMEOUT_POOL", 90.0)
-
+ERP_TIMEOUT_CONNECT = _float_env("ERP_TIMEOUT_CONNECT")
+ERP_TIMEOUT_READ = _float_env("ERP_TIMEOUT_READ")
+ERP_TIMEOUT_WRITE = _float_env("ERP_TIMEOUT_WRITE")
+ERP_TIMEOUT_POOL = _float_env("ERP_TIMEOUT_POOL")
 
 class ERPProxy:
     def __init__(self, base_url: str, api_key: Optional[str] = None):

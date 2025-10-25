@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-PROCCESSCONTROLER_URL = os.getenv("PROCCESSCONTROLER_URL", "http://alcazar:7417")
+PROCCESSCONTROLER_URL = os.getenv("PROCCESSCONTROLER_URL")
 
 # === Cliente proxy para microservicio de similitud de datos en milvus (7417)===
 class ProccessControlerProxy:

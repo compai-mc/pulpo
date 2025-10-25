@@ -16,10 +16,9 @@ import manager_historia
 from proxy_erpdolibarr import ERPProxy
 
 
-URL_ERP = os.getenv("URL_ERP", "http://alcazar:7404")
-URL_PROPOSAL = os.getenv("URL_PROPOSAL", "http://alcazar:7201")
-URL_CORREO = os.getenv("URL_CORREO", "http://alcazar:7477")
-
+URL_ERP = os.getenv("ERPDOLIBARR_URL")
+URL_PROPOSAL = os.getenv("URL_PROPOSAL")
+URL_CORREO = os.getenv("URL_CORREO")
 
 # --------------------------------------------------------------------
 # 🔮 TOOL 1: Forecast 

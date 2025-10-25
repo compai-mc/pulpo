@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-FORECAST_URL = os.getenv("FORECAST_URL", "http://alcazar:7486") 
+FORECAST_URL = os.getenv("FORECAST_URL") 
 
 
 def _float_env(var_name: str, default: float) -> float:

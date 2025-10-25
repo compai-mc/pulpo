@@ -2,7 +2,7 @@ import asyncio
 import os
 from aiokafka import AIOKafkaConsumer, TopicPartition
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
+KAFKA_BROKER = os.getenv("KAFKA_BROKER")
 
 class KafkaTopicMonitorAsync:
     def __init__(self, bootstrap_servers='localhost:9092'):

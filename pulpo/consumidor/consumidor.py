@@ -10,16 +10,14 @@ import os
 from datetime import datetime
 from collections import defaultdict
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "alcazar:29092")
-MAX_RETRY_ATTEMPTS = int(os.getenv("KAFKA_MAX_RETRIES", "3"))
-RETRY_BACKOFF_MS = int(os.getenv("KAFKA_RETRY_BACKOFF_MS", "1000"))
-COMMIT_INTERVAL_MS = int(os.getenv("KAFKA_COMMIT_INTERVAL_MS", "5000"))
-HEALTH_CHECK_INTERVAL = int(os.getenv("KAFKA_HEALTH_CHECK_INTERVAL", "30"))
+KAFKA_BROKER = os.getenv("KAFKA_BROKER")
+MAX_RETRY_ATTEMPTS = int(os.getenv("KAFKA_MAX_RETRIES"))
+RETRY_BACKOFF_MS = int(os.getenv("KAFKA_RETRY_BACKOFF_MS"))
+COMMIT_INTERVAL_MS = int(os.getenv("KAFKA_COMMIT_INTERVAL_MS"))
+HEALTH_CHECK_INTERVAL = int(os.getenv("KAFKA_HEALTH_CHECK_INTERVAL"))
 
-#KAFKA_BROKER = "alcazar:29092"
-
-HEALTH_CHECK_INTERVAL = 10         # cada 10 segundos revisa
-UNASSIGNED_TIMEOUT = 60            # si pasa 1 minuto sin particiones, reinicia
+HEALTH_CHECK_INTERVAL=int(os.getenv("HEALTH_CHECK_INTERVAL"))
+UNASSIGNED_TIMEOUT=int(os.getenv("UNASSIGNED_TIMEOUT"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,7 +25,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger("consumidor")
-
 
 class KafkaEventConsumer:
     """

@@ -19,12 +19,11 @@ def _float_env(var_name: str, default: float) -> float:
         return default
 
 
-PROPOSAL_HEALTH_TIMEOUT = _float_env("PROPOSAL_HEALTH_TIMEOUT", 5.0)
-PROPOSAL_REQUEST_TIMEOUT = _float_env("PROPOSAL_REQUEST_TIMEOUT", 30.0)
+PROPOSAL_HEALTH_TIMEOUT = _float_env("PROPOSAL_HEALTH_TIMEOUT")
+PROPOSAL_REQUEST_TIMEOUT = _float_env("PROPOSAL_REQUEST_TIMEOUT")
 
-URL_DOLIBARR = os.getenv('URL_DOLIBARR',"http://alcazar:8033")
-API_KEY_DOLIBARR= os.getenv('API_KEY_DOLIBARR',"299620633106460d8c1d03bf89fb2006fec66ccc")
-
+URL_DOLIBARR = os.getenv('URL_DOLIBARR')
+API_KEY_DOLIBARR= os.getenv('API_KEY_DOLIBARR')
 
 # ==========================================
 # PARTE 1: HistoriaManager con cantidades originales

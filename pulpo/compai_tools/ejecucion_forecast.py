@@ -5,9 +5,9 @@ from datetime import datetime,date
 from .proxy_forecast import generar_forecast_minio
 from .proxy_orquestator_flow import create_card
 
-TABLERO_OPERACIONES = os.getenv("TABLERO_OPERACIONES","EQyBuWaxdzT9HgwCH")  
-LISTA_NOTIFICACIONES = os.getenv("LISTA_NOTIFICACIONES","Notificaciones")  
-SWIMLANE = os.getenv("SWIMLANE","Virtual")  
+TABLERO_OPERACIONES = os.getenv("TABLERO_OPERACIONES")  
+LISTA_NOTIFICACIONES = os.getenv("LISTA_NOTIFICACIONES")  
+SWIMLANE = os.getenv("SWIMLANE")  
 
 def _crear_tarea_wekan(mensaje: str):
     """Crea una tarea en Wekan vía API REST (síncrono)."""
