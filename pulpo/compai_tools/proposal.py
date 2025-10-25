@@ -17,8 +17,8 @@ def _float_env(var_name: str, default: float) -> float:
         return default
 
 
-PROPOSAL_HEALTH_TIMEOUT = _float_env("PROPOSAL_HEALTH_TIMEOUT")
-PROPOSAL_REQUEST_TIMEOUT = _float_env("PROPOSAL_REQUEST_TIMEOUT")
+PROPOSAL_HEALTH_TIMEOUT = _float_env(os.getenv("PROPOSAL_HEALTH_TIMEOUT"),5)
+PROPOSAL_REQUEST_TIMEOUT = _float_env(os.getenv("PROPOSAL_REQUEST_TIMEOUT"),30)
 
 URL_DOLIBARR = os.getenv('URL_DOLIBARR')
 API_KEY_DOLIBARR= os.getenv('API_KEY_DOLIBARR')

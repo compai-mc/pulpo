@@ -11,9 +11,8 @@ from .proxy_proccess_controler import ProccessControlerProxy
 from .ejecucion_forecast import ejecucion_forecast
 from .proposal import ProposalMicroserviceClient
 from .proxy_correo import CorreoClient
-import manager_historia
+from .manager_historia import HistoriaManager
 from .proxy_erpdolibarr import ERPProxy
-
 
 URL_ERP = os.getenv("ERPDOLIBARR_URL")
 URL_PROPOSAL = os.getenv("URL_PROPOSAL")
@@ -183,7 +182,7 @@ class PropuestaERPTool(lr.agent.ToolMessage):
                 }
             )
 
-        manager = manager_historia.HistoriaManager(historia)
+        manager = HistoriaManager(historia)
         interpretacion_procesada = manager.crear_json_humano()
 
         prop = ProposalMicroserviceClient()
