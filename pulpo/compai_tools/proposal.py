@@ -5,8 +5,6 @@ import os
 from datetime import datetime, timedelta
 from arango import ArangoClient
 from typing import Dict, List, Any, Optional
-from dotenv import load_dotenv
-load_dotenv()
 
 def _float_env(var_name: str, default: float) -> float:
     value = os.getenv(var_name)

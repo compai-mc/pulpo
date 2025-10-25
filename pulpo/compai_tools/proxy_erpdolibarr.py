@@ -2,8 +2,6 @@ import httpx
 import asyncio
 import os
 from typing import Any, Dict, Optional, List, Union
-from dotenv import load_dotenv
-load_dotenv()
 
 def _float_env(var_name: str, default: float) -> float:
     value = os.getenv(var_name)

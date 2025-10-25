@@ -9,11 +9,10 @@ from langroid.agent import ToolMessage
 
 from .proxy_proccess_controler import ProccessControlerProxy
 from .ejecucion_forecast import ejecucion_forecast
-
-from proposal import ProposalMicroserviceClient
-from proxy_correo import CorreoClient
+from .proposal import ProposalMicroserviceClient
+from .proxy_correo import CorreoClient
 import manager_historia
-from proxy_erpdolibarr import ERPProxy
+from .proxy_erpdolibarr import ERPProxy
 
 
 URL_ERP = os.getenv("ERPDOLIBARR_URL")

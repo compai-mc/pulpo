@@ -1,12 +1,8 @@
 import httpx
 from typing import Optional
 import os
-from dotenv import load_dotenv
-load_dotenv()
-
 
 FORECAST_URL = os.getenv("FORECAST_URL") 
-
 
 def _float_env(var_name: str, default: float) -> float:
     value = os.getenv(var_name)

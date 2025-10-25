@@ -1,8 +1,7 @@
 import os
 import requests
 from typing import Dict, Optional
-from dotenv import load_dotenv
-load_dotenv()
+
 
 PROCCESSCONTROLER_URL = os.getenv("PROCCESSCONTROLER_URL")
 
