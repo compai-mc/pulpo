@@ -14,9 +14,11 @@ from .proxy_correo import CorreoClient
 from .manager_historia import HistoriaManager
 from .proxy_erpdolibarr import ERPProxy
 
-URL_ERP = os.getenv("ERPDOLIBARR_URL")
-URL_PROPOSAL = os.getenv("URL_PROPOSAL")
-URL_CORREO = os.getenv("URL_CORREO")
+from pulpo.util.util import require_env
+
+URL_ERP = require_env("ERPDOLIBARR_URL")
+URL_PROPOSAL = require_env("URL_PROPOSAL")
+URL_CORREO = require_env("URL_CORREO")
 
 # --------------------------------------------------------------------
 # 🔮 TOOL 1: Forecast 

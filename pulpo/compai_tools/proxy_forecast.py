@@ -1,14 +1,15 @@
 import httpx
 from typing import Optional
 import os
+from pulpo.util.util import require_env
 
-FORECAST_URL = os.getenv("FORECAST_URL") 
+FORECAST_URL = require_env("FORECAST_URL") 
 
 def _float_env(var_name: str) -> float | None:
     """
     Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
     """
-    value = os.getenv(var_name)
+    value = require_env(var_name)
     if value is None:
         print(f"ℹ️ {var_name} no definida.")
         return None

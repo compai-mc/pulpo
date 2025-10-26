@@ -4,10 +4,11 @@ from datetime import datetime,date
 
 from .proxy_forecast import generar_forecast_minio
 from .proxy_orquestator_flow import create_card
+from pulpo.util.util import require_env
 
-TABLERO_OPERACIONES = os.getenv("TABLERO_OPERACIONES")  
-LISTA_NOTIFICACIONES = os.getenv("LISTA_NOTIFICACIONES")  
-SWIMLANE = os.getenv("SWIMLANE")  
+TABLERO_OPERACIONES = require_env("TABLERO_OPERACIONES")  
+LISTA_NOTIFICACIONES = require_env("LISTA_NOTIFICACIONES")  
+SWIMLANE = require_env("SWIMLANE")  
 
 def _crear_tarea_wekan(mensaje: str):
     """Crea una tarea en Wekan vía API REST (síncrono)."""

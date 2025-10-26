@@ -1,8 +1,8 @@
 import requests
 import os
+from pulpo.util.util import require_env
 
-
-BASE_URL_ORQUESTATOR = os.getenv("BASE_URL_ORQUESTATOR")
+BASE_URL_ORQUESTATOR = require_env("BASE_URL_ORQUESTATOR")
 
 def create_card(board_id: str, title: str, description: str = "", list_name: str = None, swimlane_name: str = None):
     url = f"{BASE_URL_ORQUESTATOR}/card/create"

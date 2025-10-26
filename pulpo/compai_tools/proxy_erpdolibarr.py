@@ -2,12 +2,13 @@ import httpx
 import asyncio
 import os
 from typing import Any, Dict, Optional, List, Union
+from pulpo.util.util import require_env
 
 def _float_env(var_name: str) -> float | None:
     """
     Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
     """
-    value = os.getenv(var_name)
+    value = require_env(var_name)
     if value is None:
         print(f"ℹ️ {var_name} no definida.")
         return None

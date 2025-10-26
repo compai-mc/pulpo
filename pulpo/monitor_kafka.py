@@ -1,7 +1,7 @@
 import asyncio
 import os
 from aiokafka import AIOKafkaConsumer, TopicPartition
-from .util.util import require_env
+from pulpo.util.util import require_env
 
 KAFKA_BROKER = require_env("KAFKA_BROKER")
 

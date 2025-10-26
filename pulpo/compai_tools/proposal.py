@@ -6,11 +6,13 @@ from datetime import datetime, timedelta
 from arango import ArangoClient
 from typing import Dict, List, Any, Optional
 
+from pulpo.util.util import require_env
+
 def _float_env(var_name: str) -> float | None:
     """
     Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
     """
-    value = os.getenv(var_name)
+    value = require_env(var_name)
     if value is None:
         print(f"ℹ️ {var_name} no definida.")
         return None
@@ -24,8 +26,8 @@ def _float_env(var_name: str) -> float | None:
 PROPOSAL_HEALTH_TIMEOUT = _float_env("PROPOSAL_HEALTH_TIMEOUT")
 PROPOSAL_REQUEST_TIMEOUT = _float_env("PROPOSAL_REQUEST_TIMEOUT")
 
-URL_DOLIBARR = os.getenv('URL_DOLIBARR')
-API_KEY_DOLIBARR= os.getenv('API_KEY_DOLIBARR')
+URL_DOLIBARR = require_env('URL_DOLIBARR')
+API_KEY_DOLIBARR= require_env('API_KEY_DOLIBARR')
 
 # ==========================================
 # PARTE 1: HistoriaManager con cantidades originales

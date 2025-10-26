@@ -9,7 +9,7 @@ from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError, Kafka
 import os
 from datetime import datetime
 from collections import defaultdict
-from util.util import require_env
+from pulpo.util.util import require_env
 
 KAFKA_BROKER = require_env("KAFKA_BROKER")
 MAX_RETRY_ATTEMPTS = int(require_env("KAFKA_MAX_RETRIES"))

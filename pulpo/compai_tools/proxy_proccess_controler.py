@@ -1,9 +1,10 @@
 import os
 import requests
 from typing import Dict, Optional
+from pulpo.util.util import require_env
 
 
-PROCCESSCONTROLER_URL = os.getenv("PROCCESSCONTROLER_URL")
+PROCCESSCONTROLER_URL = require_env("PROCCESSCONTROLER_URL")
 
 # === Cliente proxy para microservicio de similitud de datos en milvus (7417)===
 class ProccessControlerProxy:

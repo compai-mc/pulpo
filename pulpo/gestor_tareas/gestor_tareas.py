@@ -14,7 +14,7 @@ sys.path.append(str(project_root))
 # Importar el productor y consumidor
 from publicador.publicador import KafkaEventPublisher
 from consumidor.consumidor import KafkaEventConsumer
-from util.util import require_env
+from pulpo.util.util import require_env
 # ========================================================
 # 🔧 Configuración
 # ========================================================
