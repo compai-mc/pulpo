@@ -6,7 +6,7 @@ from kafka.admin import NewTopic
 from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
 
 from pulpo.logueador import log
-from ..util.util import require_env
+from util.util import require_env
 
 KAFKA_BROKER = require_env("KAFKA_BROKER")
 
