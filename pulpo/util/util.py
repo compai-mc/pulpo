@@ -4,6 +4,13 @@ import ast
 from json.decoder import scanstring
 import importlib
 from pathlib import Path
+import os
+
+def require_env(var_name: str) -> str:
+    value = os.getenv(var_name)
+    if value is None:
+        raise RuntimeError(f"❌ Variable de entorno obligatoria no definida: {var_name}")
+    return value
 
 
 def extraer_json_del_texto(texto: str) -> dict:
