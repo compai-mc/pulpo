@@ -135,7 +135,6 @@ def cargar_config(ruta_config: str | Path, cargar_clases: bool = True) -> dict:
                         raise ImportError(f"No se pudo importar {nombre_clase}: {e}") from e
 
                 nodo["classes"] = clases_importadas
-                del nodo["string-classes"]
 
             for k, v in nodo.items():
                 _procesar_nodo(v)
