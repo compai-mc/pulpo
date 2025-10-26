@@ -6,8 +6,9 @@ from kafka.admin import NewTopic
 from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
 
 from pulpo.logueador import log
+from ..util.util import require_env
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER")
+KAFKA_BROKER = require_env("KAFKA_BROKER")
 
 def crear_topico(kafka_broker: str, topic_name: str, num_particiones: int = 1, replication_factor: int = 1) -> bool:
     """

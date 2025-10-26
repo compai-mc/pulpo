@@ -9,15 +9,16 @@ from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError, Kafka
 import os
 from datetime import datetime
 from collections import defaultdict
+from ..util.util import require_env
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER")
-MAX_RETRY_ATTEMPTS = int(os.getenv("KAFKA_MAX_RETRIES"))
-RETRY_BACKOFF_MS = int(os.getenv("KAFKA_RETRY_BACKOFF_MS"))
-COMMIT_INTERVAL_MS = int(os.getenv("KAFKA_COMMIT_INTERVAL_MS"))
-HEALTH_CHECK_INTERVAL = int(os.getenv("KAFKA_HEALTH_CHECK_INTERVAL"))
+KAFKA_BROKER = require_env("KAFKA_BROKER")
+MAX_RETRY_ATTEMPTS = int(require_env("KAFKA_MAX_RETRIES"))
+RETRY_BACKOFF_MS = int(require_env("KAFKA_RETRY_BACKOFF_MS"))
+COMMIT_INTERVAL_MS = int(require_env("KAFKA_COMMIT_INTERVAL_MS"))
+HEALTH_CHECK_INTERVAL = int(require_env("KAFKA_HEALTH_CHECK_INTERVAL"))
 
-HEALTH_CHECK_INTERVAL=int(os.getenv("HEALTH_CHECK_INTERVAL"))
-UNASSIGNED_TIMEOUT=int(os.getenv("UNASSIGNED_TIMEOUT"))
+HEALTH_CHECK_INTERVAL=int(require_env("HEALTH_CHECK_INTERVAL"))
+UNASSIGNED_TIMEOUT=int(require_env("UNASSIGNED_TIMEOUT"))
 
 logging.basicConfig(
     level=logging.INFO,

@@ -14,21 +14,20 @@ sys.path.append(str(project_root))
 # Importar el productor y consumidor
 from publicador.publicador import KafkaEventPublisher
 from consumidor.consumidor import KafkaEventConsumer
-
+from ..util.util import require_env
 # ========================================================
 # 🔧 Configuración
 # ========================================================
-ARANGO_HOST = os.getenv("ARANGO_HOST", "http://alcazar:8529")
-ARANGO_DB_COMPAI = os.getenv("ARANGO_DB_COMPAI", "compai_db")
-ARANGO_USER = os.getenv("ARANGO_USER", "root")
-ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "sabbath")
-ARANGO_COLLECTION = os.getenv("ARANGO_COLLECTION", "tareas")
+ARANGO_HOST = require_env("ARANGO_HOST")
+ARANGO_DB_COMPAI = require_env("ARANGO_DB_COMPAI")
+ARANGO_USER = require_env("ARANGO_USER")
+ARANGO_PASSWORD = require_env("ARANGO_PASS")
+ARANGO_COLLECTION = require_env("ARANGO_COLLECTION_TAREAS")
 
-TOPIC_TASK = os.getenv("TOPIC_TASK", "job.task.start")
-TOPIC_END_TASK = os.getenv("TOPIC_END_TASK", "job.task.completed")
-TOPIC_END_JOB = os.getenv("TOPIC_END_JOB", "job.completed")
-TOPIC_END_JOBS = os.getenv("TOPIC_END_JOBS", "jobs.all.completed")
-
+TOPIC_TASK = require_env("TOPIC_TASK")
+TOPIC_END_TASK = require_env("TOPIC_END_TASK")
+TOPIC_END_JOB = require_env("TOPIC_END_JOB")
+TOPIC_END_JOBS = require_env("TOPIC_END_JOBS")
 
 # ========================================================
 # 🧠 Clase principal: GestorTareas
