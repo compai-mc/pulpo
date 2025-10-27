@@ -282,6 +282,7 @@ class GestorTareas:
 
             if job_id and task_id:
                 self.task_completed(job_id, task_id)
+
         except Exception as e:
             log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
 
@@ -311,7 +312,10 @@ class GestorTareas:
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
                 if self.on_complete_callback:
-                    self.on_complete_callback(job_id)
+                    if self.on_complete_callback(job_id): 
+                        self.consumer._consumer.commit()
+                        log.debug(f"[GestorTareas] Commit realizado tras on_complete_callback para job '{job_id}'")
+
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
 
