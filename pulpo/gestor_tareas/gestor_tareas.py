@@ -251,7 +251,7 @@ class GestorTareas:
             self.start()
         self.producer.publish(TOPIC_TASK, msg)
 
-    def _on_kafka_message(self, message, *args, **kwargs):
+    def _on_kafka_message2(self, message, *args, **kwargs):
         """Procesa mensajes de Kafka sobre tareas completadas."""
         try:
             data = json.loads(message.value.decode("utf-8"))
@@ -264,6 +264,27 @@ class GestorTareas:
                 self.task_completed(job_id, task_id)
         except Exception as e:
             log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
+
+    def _on_kafka_message(self, message, *args, **kwargs):
+        """Procesa mensajes de Kafka sobre tareas completadas."""
+        try:
+            # Si el mensaje es un objeto Kafka (tiene .value)
+            if hasattr(message, "value"):
+                data = json.loads(message.value.decode("utf-8"))
+            else:
+                # Si ya es un dict o string
+                data = message if isinstance(message, dict) else json.loads(message)
+
+            job_id = data.get("job_id")
+            task_id = data.get("task_id")
+
+            log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
+
+            if job_id and task_id:
+                self.task_completed(job_id, task_id)
+        except Exception as e:
+            log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
+
 
     def task_completed(self, job_id: str, task_id: str):
         """Marca una tarea como completada y publica los eventos asociados."""
