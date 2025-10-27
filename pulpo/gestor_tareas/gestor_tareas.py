@@ -12,8 +12,8 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 # Importar el productor y consumidor
-from publicador.publicador import KafkaEventPublisher
-from consumidor.consumidor import KafkaEventConsumer
+from pulpo.publicador.publicador import KafkaEventPublisher
+from pulpo.consumidor.consumidor import KafkaEventConsumer
 from pulpo.util.util import require_env
 # ========================================================
 # 🔧 Configuración
@@ -92,6 +92,13 @@ class GestorTareas:
             log.info(f"[GestorTareas] Consumer configurado para topic: {topic_finalizacion_tareas}")
         else:
             log.info("[GestorTareas] Sin callbacks configurados, consumer no creado")
+
+        # Identificador único de esta instancia para evitar procesar mensajes que esta misma
+        # instancia publica (evita bucles cuando publicamos en los mismos topics que escuchamos).
+        try:
+            self.instance_id = str(uuid.uuid4())
+        except Exception:
+            self.instance_id = "gestor_tareas_local"
 
         self._initialized = True
         log.info("[GestorTareas] Instancia única creada correctamente")
@@ -249,7 +256,9 @@ class GestorTareas:
         if not self.producer_started:
             log.warning("[GestorTareas] Producer no iniciado, arrancando automáticamente...")
             self.start()
-        self.producer.publish(TOPIC_TASK, msg)
+        # Marcar el origen del mensaje para que el consumidor local pueda ignorarlo si se recibe
+        msg_with_origin = {**msg, "origin": self.instance_id}
+        self.producer.publish(TOPIC_TASK, msg_with_origin)
 
     def _on_kafka_message2(self, message, *args, **kwargs):
         """Procesa mensajes de Kafka sobre tareas completadas."""
@@ -259,6 +268,12 @@ class GestorTareas:
             task_id = data.get("task_id")
 
             log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
+
+            # Ignorar mensajes creados por esta misma instancia
+            origin = data.get("origin") or data.get("_origin")
+            if origin == getattr(self, "instance_id", None):
+                log.debug(f"[GestorTareas] Ignorando mensaje propio (origin={origin})")
+                return
 
             if job_id and task_id:
                 self.task_completed(job_id, task_id)
@@ -280,6 +295,12 @@ class GestorTareas:
 
             log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
 
+            # Ignorar mensajes creados por esta misma instancia para evitar reentrada
+            origin = data.get("origin") or data.get("_origin")
+            if origin == getattr(self, "instance_id", None):
+                log.debug(f"[GestorTareas] Ignorando mensaje propio (origin={origin})")
+                return
+
             if job_id and task_id:
                 self.task_completed(job_id, task_id)
 
@@ -299,22 +320,34 @@ class GestorTareas:
             self.collection.update(job)
             log.info(f"[GestorTareas] ✔ Tarea '{task_id}' completada en job '{job_id}'")
 
-            self.producer.publish(
+            """self.producer.publish(
                 TOPIC_END_TASK,
-                {"job_id": job_id, "task_id": task_id, "status": "completed", "uuid": str(uuid.uuid4())},
-            )
+                {"job_id": job_id, "task_id": task_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
+            )"""
 
             if all(t["completed"] for t in job["tasks"].values()):
-                self.producer.publish(
+                """self.producer.publish(
                     TOPIC_END_JOB,
-                    {"job_id": job_id, "status": "completed", "uuid": str(uuid.uuid4())},
-                )
+                    {"job_id": job_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
+                )"""
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
                 if self.on_complete_callback:
-                    if self.on_complete_callback(job_id): 
-                        self.consumer._consumer.commit()
-                        log.debug(f"[GestorTareas] Commit realizado tras on_complete_callback para job '{job_id}'")
+                    try:
+                        resultado = self.on_complete_callback(job_id)
+
+                        if resultado:
+                            try:
+                                """self.consumer.commit()"""
+                                log.debug(f"[GestorTareas] ✅ Commit realizado tras callback para job '{job_id}'")
+                            except Exception as commit_error:
+                                log.error(f"[GestorTareas] ⚠️ Error al hacer commit para job '{job_id}': {commit_error}")
+                        else:
+                            log.warning(f"[GestorTareas] ❌ Callback devolvió False, no se hace commit para job '{job_id}'")
+
+                    except Exception as callback_error:
+                        log.error(f"[GestorTareas] ❗ Error durante el callback de job '{job_id}': {callback_error}")
+
 
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
