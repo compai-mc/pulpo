@@ -1,13 +1,10 @@
 import httpx
-import asyncio
 import os
-from typing import Any, Dict, Optional, List, Union
+from typing import Any, Dict, Optional, List
 from pulpo.util.util import require_env
 
 def _float_env(var_name: str) -> float | None:
-    """
-    Devuelve el valor float de una variable de entorno, o None si no existe o no es válida.
-    """
+    """Devuelve el valor float de una variable de entorno, o None si no existe o no es válido."""
     value = require_env(var_name)
     if value is None:
         print(f"ℹ️ {var_name} no definida.")
@@ -24,7 +21,8 @@ ERP_TIMEOUT_READ = _float_env("ERP_TIMEOUT_READ")
 ERP_TIMEOUT_WRITE = _float_env("ERP_TIMEOUT_WRITE")
 ERP_TIMEOUT_POOL = _float_env("ERP_TIMEOUT_POOL")
 
-class ERPProxySincrono:
+
+class ERPProxy:
     def __init__(self, base_url: str, api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         headers = {"Content-Type": "application/json"}
@@ -37,44 +35,44 @@ class ERPProxySincrono:
             write=ERP_TIMEOUT_WRITE,
             pool=ERP_TIMEOUT_POOL,
         )
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout, headers=headers)
+        self.client = httpx.Client(base_url=self.base_url, timeout=timeout, headers=headers)
 
-    async def close(self):
-        await self.client.aclose()
+    def close(self):
+        self.client.close()
 
     # ---------------- Orders ----------------
-    async def pedidos(self, fecha: str) -> Dict[str, Any]:
-        r = await self.client.get(f"/orders/{fecha}/url")
+    def pedidos(self, fecha: str) -> Dict[str, Any]:
+        r = self.client.get(f"/orders/{fecha}/url")
         return r.json()
 
-    async def pedidos_producto_cliente_mes(self, fecha: str) -> Dict[str, Any]:
-        r = await self.client.get(f"/orders/group-by-product-client-month/{fecha}/url")
+    def pedidos_producto_cliente_mes(self, fecha: str) -> Dict[str, Any]:
+        r = self.client.get(f"/orders/group-by-product-client-month/{fecha}/url")
         return r.json()
 
-    async def pedidos_sync(self) -> Dict[str, Any]:
-        r = await self.client.post("/orders/sync")
+    def pedidos_sync(self) -> Dict[str, Any]:
+        r = self.client.post("/orders/sync")
         return r.json()
 
     # ---------------- Products ----------------
-    async def productos(self) -> List[Dict[str, Any]]:
-        r = await self.client.get("/products")
+    def productos(self) -> List[Dict[str, Any]]:
+        r = self.client.get("/products")
         return r.json()
 
-    async def obtener_stock_producto(self, product_ref: str) -> Dict[str, Any]:
-        r = await self.client.get(f"/products/{product_ref}/stock")
+    def obtener_stock_producto(self, product_ref: str) -> Dict[str, Any]:
+        r = self.client.get(f"/products/{product_ref}/stock")
         return r.json()
 
     # ---------------- Clients ----------------
-    async def clientes(self) -> List[Dict[str, Any]]:
-        r = await self.client.get("/clients")
+    def clientes(self) -> List[Dict[str, Any]]:
+        r = self.client.get("/clients")
         return r.json()
 
     # ---------------- Proposal ----------------
-    async def crear_presupuesto(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        r = await self.client.post("/proposal", json=payload)
+    def crear_presupuesto(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        r = self.client.post("/proposal", json=payload)
         return r.json()
 
-    async def proposal_create_document(self, name: str) -> Dict[str, Any]:
+    def proposal_create_document(self, name: str) -> Dict[str, Any]:
         """
         Devuelve JSON con metadata y base64 del PDF.
         {
@@ -84,46 +82,31 @@ class ERPProxySincrono:
             "download_url": "..."
         }
         """
-        r = await self.client.post(f"/proposal/{name}/create/document")
+        r = self.client.post(f"/proposal/{name}/create/document")
         return r.json()
 
-    async def download_proposal_document(self, name: str) -> bytes:
-        """
-        Descarga directa del PDF binario.
-        """
-        r = await self.client.get(f"/proposal/{name}/document/download")
-        if r.status_code == 200:
-            return r.content
-        return b""  # en caso de error devolvemos vacío
+    def download_proposal_document(self, name: str) -> bytes:
+        """Descarga directa del PDF binario."""
+        r = self.client.get(f"/proposal/{name}/document/download")
+        return r.content if r.status_code == 200 else b""
 
-    # ---------------- Health / utilidades ----------------
-    async def health(self) -> Dict[str, Any]:
-        r = await self.client.get("/health")
+    # ---------------- Health ----------------
+    def health(self) -> Dict[str, Any]:
+        r = self.client.get("/health")
         return r.json()
 
 
 # ---------------- Ejemplo de uso ----------------
-async def main():
+if __name__ == "__main__":
     client = ERPProxy("http://localhost:7404", api_key="299620633106460d8c1d03bf89fb2006fec66ccc")
 
-    # Listados
-    #print("Pedidos:", await client.pedidos("2025-09"))
-    #print("Clientes:", await client.clientes())
-    #print("Productos:", await client.productos())
-
-    # Crear doc -> devuelve JSON con base64
-    doc_info = await client.proposal_create_document("(PROV10384)")
+    doc_info = client.proposal_create_document("(PROV10384)")
     print("Info documento:", doc_info)
 
-    # Descargar binario directamente
-    pdf_bytes = await client.download_proposal_document("(PROV10384)")
+    pdf_bytes = client.download_proposal_document("(PROV10384)")
     if pdf_bytes:
         with open("propuesta.pdf", "wb") as f:
             f.write(pdf_bytes)
         print("PDF guardado en propuesta.pdf")
 
-    await client.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    client.close()
