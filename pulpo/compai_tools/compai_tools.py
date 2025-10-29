@@ -13,9 +13,11 @@ from .proposal import ProposalMicroserviceClient
 from .proxy_correo import CorreoClient
 from .manager_historia import HistoriaManager
 from .proxy_erpdolibarr import ERPProxy
+from .proxy_erpdolibarr_sincrono import ERPProxySincrono
 from .esquema import MensajeEntrada
 
 from pulpo.util.util import require_env
+import asyncio
 
 URL_ERP = require_env("ERPDOLIBARR_URL")
 URL_PROPOSAL = require_env("URL_PROPOSAL")
@@ -199,9 +201,11 @@ class PropuestaERPTool(lr.agent.ToolMessage):
 
         # 📄 Generar y recuperar el PDF
         proposal = f"(PROV{resultado['proposal_id']})"
-        erp = ERPProxy(URL_ERP)
-        response = erp.proposal_create_document(proposal)
+        erp = ERPProxySincrono(URL_ERP)
+        response = erp.proposal_create_document(proposal) 
         pdf_base64 = response["content_base64"]
+
+        print(f"✅ Documento creado: {pdf_base64[:100]}...")
 
         if not resultado.get("success", False):
             return FinalResultTool(
