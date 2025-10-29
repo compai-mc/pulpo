@@ -201,8 +201,8 @@ class PropuestaERPTool(lr.agent.ToolMessage):
 
         # 📄 Generar y recuperar el PDF
         proposal = f"(PROV{resultado['proposal_id']})"
-        erp = ERPProxySincrono(URL_ERP)
-        response = erp.proposal_create_document(proposal) 
+        erp = ERPProxy(URL_ERP)
+        response = asyncio.run(erp.proposal_create_document(proposal))
         pdf_base64 = response["content_base64"]
 
         print(f"✅ Documento creado: {pdf_base64[:100]}...")
