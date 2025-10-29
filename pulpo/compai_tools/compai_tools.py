@@ -13,6 +13,7 @@ from .proposal import ProposalMicroserviceClient
 from .proxy_correo import CorreoClient
 from .manager_historia import HistoriaManager
 from .proxy_erpdolibarr import ERPProxy
+from .esquema import MensajeEntrada
 
 from pulpo.util.util import require_env
 
@@ -135,44 +136,46 @@ class ProductosTool(lr.agent.ToolMessage):
 # --------------------------------------------------------------------
 # 🔮 TOOL 3: Propuesta
 # --------------------------------------------------------------------
-
-class PropuestaERPRequest(BaseModel):
-    historia: Dict[str, Any] = Field(..., description="Diccionario con la historia  del mensaje.")
-
-
 class PropuestaERPTool(lr.agent.ToolMessage):
     request: str = "create_erp_proposal"
-    purpose: str = "Genera una propuesta en el ERP a partir de la historia de interpretación de un mensaje."
-    params: PropuestaERPRequest
+    purpose: str = "Genera una propuesta en el ERP a partir de la historia de un mensaje."
+    params: MensajeEntrada  
 
     @classmethod
     def examples(cls):
         return [
             (
-                "Mensaje indica interés en productos solares, se crea una propuesta en el ERP con los datos históricos.",
-                cls(params=PropuestaERPRequest(historia={
-                    "subject": "Solicitud de presupuesto paneles solares",
-                    "sender": "cliente@empresa.com",
-                    "categorias": ["energía", "paneles solares"],
-                    "productos": ["panel solar 400W", "inversor 5kW"],
-                    "comentarios": ["Cliente pide presupuesto para instalación doméstica."]
-                })),
+                "Necesito hacer una propuesta para un cliente.",
+                cls(params=MensajeEntrada(
+                    mensaje="Solicitud de presupuesto paneles solares",
+                    remitente="cliente@empresa.com",
+                    historia={
+                        "subject": "Solicitud de presupuesto paneles solares",
+                        "sender": "cliente@empresa.com",
+                        "categorias": ["energía", "paneles solares"],
+                        "productos": ["panel solar 400W", "inversor 5kW"],
+                        "comentarios": ["Cliente pide presupuesto para instalación doméstica."]
+                    }
+                )),
             ),
             (
                 "Mensaje con intención de compra detectada, se genera automáticamente propuesta ERP.",
-                cls(params=PropuestaERPRequest(historia={
-                    "subject": "Cotización routers Cisco",
-                    "sender": "it@empresa.com",
-                    "categorias": ["redes", "hardware"],
-                    "productos": ["router Cisco 9200", "switch PoE 24p"],
-                    "comentarios": ["Cliente busca alternativas de red para oficina."]
-                })),
+                cls(params=MensajeEntrada(
+                    mensaje="Cotización routers Cisco",
+                    remitente="it@empresa.com",
+                    historia={
+                        "subject": "Cotización routers Cisco",
+                        "sender": "it@empresa.com",
+                        "categorias": ["redes", "hardware"],
+                        "productos": ["router Cisco 9200", "switch PoE 24p"],
+                        "comentarios": ["Cliente busca alternativas de red para oficina."]
+                    }
+                )),
             ),
         ]
 
     def handle(self) -> FinalResultTool:
         historia = self.params.historia
-
         if not historia:
             return FinalResultTool(
                 info={
@@ -184,15 +187,17 @@ class PropuestaERPTool(lr.agent.ToolMessage):
                 }
             )
 
+        # 🧠 Procesa la historia
         manager = HistoriaManager(historia)
         interpretacion_procesada = manager.crear_json_humano()
 
+        # 🧩 Llama al microservicio ERP
         prop = ProposalMicroserviceClient()
         resultado = prop.crear_proposal_desde_historia(interpretacion_procesada)
 
         print(f"✅ Propuesta creada con ID {resultado['proposal_id']}")
 
-        # Generar y recuperar el PDF de la propuesta
+        # 📄 Generar y recuperar el PDF
         proposal = f"(PROV{resultado['proposal_id']})"
         erp = ERPProxy(URL_ERP)
         response = erp.proposal_create_document(proposal)
@@ -220,6 +225,7 @@ class PropuestaERPTool(lr.agent.ToolMessage):
             }
         )
     
+
 
 # --------------------------------------------------------------------
 # 🔮 TOOL 4: Envio de correos
