@@ -22,7 +22,7 @@ ERP_TIMEOUT_WRITE = _float_env("ERP_TIMEOUT_WRITE")
 ERP_TIMEOUT_POOL = _float_env("ERP_TIMEOUT_POOL")
 
 
-class ERPProxy:
+class ERPProxySincrono:
     def __init__(self, base_url: str, api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         headers = {"Content-Type": "application/json"}
@@ -98,7 +98,7 @@ class ERPProxy:
 
 # ---------------- Ejemplo de uso ----------------
 if __name__ == "__main__":
-    client = ERPProxy("http://localhost:7404", api_key="299620633106460d8c1d03bf89fb2006fec66ccc")
+    client = ERPProxySincrono("http://localhost:7404", api_key="299620633106460d8c1d03bf89fb2006fec66ccc")
 
     doc_info = client.proposal_create_document("(PROV10384)")
     print("Info documento:", doc_info)
