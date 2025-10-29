@@ -193,6 +193,29 @@ class GestorTareas:
 
         return job_id
     
+    def get_job(self, job_id: str) -> dict | None:
+        """
+        Recupera el documento completo en ArangoDB correspondiente a un job_id.
+        Devuelve el dict con los datos del job, o None si no existe.
+        """
+        try:
+            if not job_id:
+                log.error("[GestorTareas] get_job() llamado sin job_id")
+                return None
+
+            if not self.collection.has(job_id):
+                log.warning(f"[GestorTareas] No existe ningún documento con job_id '{job_id}'")
+                return None
+
+            job = self.collection.get(job_id)
+            log.debug(f"[GestorTareas] Job recuperado: {job_id}")
+            return job
+
+        except Exception as e:
+            log.error(f"[GestorTareas] Error recuperando job '{job_id}': {e}")
+            return None
+
+
     def update_task(self, job_id: str, task_id: str, updates: dict):
         job = self.collection.get(job_id)
         if not job or task_id not in job["tasks"]:
