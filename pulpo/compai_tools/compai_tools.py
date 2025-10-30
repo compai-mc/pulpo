@@ -288,15 +288,28 @@ class EnviarCorreoTool(ToolMessage):
         return respuesta.message.strip()
 
     def handle(self) -> FinalResultTool:
-        data = self.params
-
-        # Validación de campos obligatorios
-        if not data.destino or not data.asunto or not data.mensaje:
+        historia = self.params.historia
+        if not historia:
             return FinalResultTool(
                 info={
                     "respuesta": None,
-                    "mensaje": "Faltan campos obligatorios (destino, asunto o mensaje).",
+                    "mensaje": "No se proporcionó historia para enviar el correo.",
                     "mode": "offline",
+                    "status": "error",
+                    "reejecutar": False
+                }
+            )
+
+        # 🧠 Procesa la historia
+        manager = HistoriaManager(historia)
+        interpretacion_procesada = manager.crear_json_humano()
+        email = interpretacion_procesada.get("empresa", {}).get("email")
+        if not email:
+            return FinalResultTool(
+                info={
+                    "respuesta": email,
+                    "mensaje": "No existe la dirección del destinatario para enviar el correo",
+                    "mode": "online",
                     "status": "error",
                     "reejecutar": False
                 }
@@ -307,15 +320,15 @@ class EnviarCorreoTool(ToolMessage):
 
         # Preparar adjuntos (si los hay)
         adjuntos = []
-        if data.adjuntos:
-            for adj in data.adjuntos:
+        if self.params.adjuntos:
+            for adj in self.params.adjuntos:
                 adjuntos.append((adj.nombre, adj.contenido_base64, adj.tipo_mime))
 
         # Enviar correo
         correo_cli = CorreoClient(URL_CORREO)
         resultado = correo_cli.enviar_correo(
-            destinatario=data.destino,
-            asunto=data.asunto,
+            destinatario=email,
+            asunto=self.params.asunto,
             mensaje=body,
             adjuntos=adjuntos
         )
