@@ -280,12 +280,26 @@ class EnviarCorreoTool(ToolMessage):
         prompt = f"""
         Escribe un correo profesional y amable con los siguientes datos:
         - Asunto: {data.asunto}
-        - Contexto: {interpretacion_procesada}
-        - Destinatario: {data.destino}
+        - Contexto: {interpretacion_procesada.get("productos", "")}
+        - Destinatario: {interpretacion_procesada.get("empresa", {}).get("name", "Cliente")}
         El correo debe tener tono formal y ser breve.
+        *Solo* ponme el cuerpo del correo, sin contexto ni nada adicional
+        La respueta debe ser en formato apto para ser enviado por correo electrónico.
         """
         respuesta = self.agent.llm_response(prompt)
-        return respuesta.message.strip()
+        
+        # Si Langroid devuelve un solo documento:
+        if hasattr(respuesta, "content"):
+            return respuesta.content.strip()
+        
+        # Si devuelve una lista de documentos:
+        elif isinstance(respuesta, list) and len(respuesta) > 0 and hasattr(respuesta[0], "content"):
+            return respuesta[0].content.strip()
+        
+        # Si no hay contenido válido
+        else:
+            raise ValueError(f"Respuesta inesperada del agente: {respuesta}")
+
 
     def handle(self) -> FinalResultTool:
         historia = self.params.historia
@@ -320,15 +334,6 @@ class EnviarCorreoTool(ToolMessage):
         # Generar el cuerpo del correo
         body = self.generar_body(interpretacion_procesada)
 
-        print("Body generado")
-        # Preparar adjuntos (si los hay)
-        adjuntos = []
-        if self.params.adjuntos:
-            for adj in self.params.adjuntos:
-                adjuntos.append((adj.nombre, adj.contenido_base64, adj.tipo_mime))
-
-
-        print("adjuntos procesados")
         # Enviar correo
         correo_cli = CorreoClient(URL_CORREO)
         print("Clase de correo iniciada")
@@ -336,13 +341,13 @@ class EnviarCorreoTool(ToolMessage):
             destinatario=email,
             asunto=self.params.asunto,
             mensaje=body,
-            adjuntos=adjuntos
+            adjuntos=self.params.adjuntos
         )
 
         print("Correo enviado")
 
         # Evaluar el resultado
-        if not resultado.get("success", False):
+        if resultado.get("status", False) != "success":
             return FinalResultTool(
                 info={
                     "respuesta": resultado,
@@ -367,110 +372,96 @@ class EnviarCorreoTool(ToolMessage):
 # 🔮 TOOL 5: Genera y envia Proposal por correo
 # --------------------------------------------------------------------
 
-class EnviarPropuestaRequest(BaseModel):
-    historia: Dict[str, Any] = Field(..., description="Historia interpretativa del mensaje para generar la propuesta.")
-    destinatario: str = Field(..., description="Correo del destinatario de la propuesta.")
-    asunto: str = Field(..., description="Asunto del correo.")
-    mensaje: str = Field(..., description="Cuerpo del correo.")
-    enviar_correo: bool = Field(default=True, description="Si es True, envía automáticamente el correo con la propuesta adjunta.")
-
 
 class EnviarPropuestaTool(ToolMessage):
     request: str = "create_and_send_proposal"
     purpose: str = "Crea una propuesta en el ERP y la envía por correo electrónico al cliente."
-    params: EnviarPropuestaRequest
+    params: MensajeEntrada
 
     @classmethod
     def examples(cls):
         return [
             (
                 "Mensaje indica solicitud de presupuesto; se genera la propuesta ERP y se envía por correo.",
-                cls(params=EnviarPropuestaRequest(
+                cls(params=MensajeEntrada(
+                    remitente="agente.ia",
+                    destino="cliente@empresa.com",
+                    asunto="Propuesta instalación solar",
+                    mensaje="Estimado cliente, adjuntamos la propuesta solicitada. Un cordial saludo.",
                     historia={
                         "subject": "Presupuesto instalación solar",
                         "sender": "cliente@empresa.com",
                         "productos": ["panel solar 400W", "batería 5kWh"],
                         "comentarios": ["Cliente solicita presupuesto completo con instalación."]
                     },
-                    destinatario="cliente@empresa.com",
-                    asunto="Propuesta instalación solar",
-                    mensaje="Estimado cliente, adjuntamos la propuesta solicitada. Un cordial saludo.",
-                    enviar_correo=True
+                    accion=["create_and_send_proposal"]
                 ))
             ),
         ]
 
     def handle(self) -> FinalResultTool:
-        data = self.params
+        historia = self.params.historia
+        if not historia:
+            return FinalResultTool(
+                info={
+                    "respuesta": None,
+                    "mensaje": "No se proporcionó historia para enviar el correo.",
+                    "mode": "offline",
+                    "status": "error",
+                    "reejecutar": False
+                }
+            )
 
-        # ======================================================
-        # 1️⃣ Crear la propuesta usando la tool PropuestaERPTool
-        # ======================================================
+        # 1️⃣ Crear la propuesta usando PropuestaERPTool
         propuesta_tool = PropuestaERPTool(
-            params=PropuestaERPRequest(historia=data.historia)
+            params=self.params
         )
-        propuesta_tool.agent = self.agent  # 🔥 Mismo LLM y contexto
+        propuesta_tool.agent = self.agent  # 🔥 Reutiliza el mismo agente LLM
         resultado_propuesta = propuesta_tool.handle().info
 
         if resultado_propuesta.get("status") == "error":
             return FinalResultTool(
                 info={
                     "respuesta": resultado_propuesta,
-                    "mensaje": "No se pudo crear la propuesta en el ERP.",
+                    "mensaje": "❌ No se pudo crear la propuesta en el ERP.",
                     "mode": "online",
                     "status": "error",
                     "reejecutar": False
                 }
             )
 
-        # Aquí ya tienes el PDF en base64 dentro del resultado
+        # Extraer el PDF generado
         pdf_base64 = resultado_propuesta.get("adjunto")
-
-        # ======================================================
-        # 2️⃣ Enviar el correo usando la tool EnviarCorreoTool
-        # ======================================================
-        if data.enviar_correo:
-            correo_tool = EnviarCorreoTool(
-                params=EnviarCorreoRequest(
-                    destinatario=data.destinatario,
-                    asunto=data.asunto,
-                    mensaje=data.mensaje,
-                    adjuntos=[
-                        CorreoAdjunto(
-                            nombre="propuesta.pdf",
-                            contenido_base64=pdf_base64,
-                            tipo_mime="application/pdf"
-                        )
-                    ]
-                )
+        self.params.adjuntos = [("propuesta.pdf",pdf_base64,"application/pdf")]
+        # 2️⃣ Enviar correo con la propuesta adjunta
+        correo_tool = EnviarCorreoTool(
+            params=self.params
             )
-            correo_tool.agent = self.agent  # 🔥 Misma instancia de LLM
-            resultado_correo = correo_tool.handle().info
+        correo_tool.agent = self.agent
+        resultado_correo = correo_tool.handle().info
 
-            if resultado_correo.get("status") == "error":
-                return FinalResultTool(
-                    info={
-                        "respuesta": {
-                            "propuesta": resultado_propuesta,
-                            "correo": resultado_correo
-                        },
-                        "mensaje": "Propuesta creada pero el correo no se pudo enviar.",
-                        "mode": "online",
-                        "status": "warning",
-                        "reejecutar": False
-                    }
-                )
+        if resultado_correo.get("status") == "error":
+            return FinalResultTool(
+                info={
+                    "respuesta": {
+                        "propuesta": resultado_propuesta,
+                        "correo": resultado_correo
+                    },
+                    "mensaje": "⚠️ Propuesta creada, pero el correo no se pudo enviar.",
+                    "mode": "online",
+                    "status": "warning",
+                    "reejecutar": False
+                }
+            )
 
-        # ======================================================
         # ✅ Resultado final combinado
-        # ======================================================
         return FinalResultTool(
             info={
                 "respuesta": {
                     "propuesta": resultado_propuesta,
-                    "correo": "enviado" if data.enviar_correo else "no enviado"
+                    "correo": resultado_correo
                 },
-                "mensaje": "Propuesta creada y enviada correctamente.",
+                "mensaje": "✅ Propuesta creada y enviada correctamente.",
                 "mode": "online",
                 "status": "completado",
                 "reejecutar": False
