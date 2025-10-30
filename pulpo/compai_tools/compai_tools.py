@@ -272,7 +272,7 @@ class EnviarCorreoTool(ToolMessage):
         ]
     
     # 💬 Genera el cuerpo del correo con ayuda del LLM del agente
-    def generar_body(self) -> str:
+    def generar_body(self, interpretacion_procesada) -> str:
         if not self.agent:
             raise RuntimeError("El agente no está disponible en la tool.")
         
@@ -280,7 +280,7 @@ class EnviarCorreoTool(ToolMessage):
         prompt = f"""
         Escribe un correo profesional y amable con los siguientes datos:
         - Asunto: {data.asunto}
-        - Contexto: {data.mensaje}
+        - Contexto: {interpretacion_procesada}
         - Destinatario: {data.destino}
         El correo debe tener tono formal y ser breve.
         """
@@ -305,6 +305,8 @@ class EnviarCorreoTool(ToolMessage):
         interpretacion_procesada = manager.crear_json_humano()
         email = interpretacion_procesada.get("empresa", {}).get("email")
         if not email:
+            email="peperedondorubio@gmail.com"
+            """
             return FinalResultTool(
                 info={
                     "respuesta": email,
@@ -313,25 +315,31 @@ class EnviarCorreoTool(ToolMessage):
                     "status": "error",
                     "reejecutar": False
                 }
-            )
+            )"""
 
         # Generar el cuerpo del correo
-        body = self.generar_body()
+        body = self.generar_body(interpretacion_procesada)
 
+        print("Body generado")
         # Preparar adjuntos (si los hay)
         adjuntos = []
         if self.params.adjuntos:
             for adj in self.params.adjuntos:
                 adjuntos.append((adj.nombre, adj.contenido_base64, adj.tipo_mime))
 
+
+        print("adjuntos procesados")
         # Enviar correo
         correo_cli = CorreoClient(URL_CORREO)
+        print("Clase de correo iniciada")
         resultado = correo_cli.enviar_correo(
             destinatario=email,
             asunto=self.params.asunto,
             mensaje=body,
             adjuntos=adjuntos
         )
+
+        print("Correo enviado")
 
         # Evaluar el resultado
         if not resultado.get("success", False):
