@@ -14,7 +14,7 @@ from .proxy_correo import CorreoClient
 from .manager_historia import HistoriaManager
 from .proxy_erpdolibarr import ERPProxy
 from .proxy_erpdolibarr_sincrono import ERPProxySincrono
-from .esquema import MensajeEntrada
+from .esquema import MensajeEntrada,FicheroAdjunto
 
 from pulpo.util.util import require_env
 import asyncio
@@ -234,55 +234,44 @@ class PropuestaERPTool(lr.agent.ToolMessage):
 # --------------------------------------------------------------------
 # 🔮 TOOL 4: Envio de correos
 # --------------------------------------------------------------------
-
-class CorreoAdjunto(BaseModel):
-    nombre: str = Field(..., description="Nombre del archivo adjunto, por ejemplo 'propuesta.pdf'.")
-    contenido_base64: str = Field(..., description="Contenido del archivo codificado en Base64.")
-    tipo_mime: str = Field(..., description="Tipo MIME del adjunto, por ejemplo 'application/pdf'.")
-
-
-class EnviarCorreoRequest(BaseModel):
-    destinatario: str = Field(..., description="Dirección de correo del destinatario.")
-    asunto: str = Field(..., description="Asunto del correo.")
-    mensaje: str = Field(..., description="Cuerpo del correo en texto o HTML.")
-    adjuntos: List[CorreoAdjunto] = Field(default_factory=list, description="Lista de adjuntos en formato Base64.")
-
-
-class EnviarCorreoTool(lr.agent.ToolMessage):
+class EnviarCorreoTool(ToolMessage):
     request: str = "send_email"
     purpose: str = "Envía un correo electrónico con el asunto, cuerpo y adjuntos especificados."
-    params: EnviarCorreoRequest
+    params: MensajeEntrada
 
     @classmethod
     def examples(cls):
         return [
             (
                 "Cliente identificado, se envía correo con propuesta adjunta.",
-                cls(params=EnviarCorreoRequest(
-                    destinatario="peperedondorubio@gmail.com",
+                cls(params=MensajeEntrada(
+                    remitente="agente.ia",
+                    destino="peperedondorubio@gmail.com",
                     asunto="Propuesta para empresa",
                     mensaje="Estimado cliente, adjuntamos la propuesta solicitada.",
                     adjuntos=[
-                        CorreoAdjunto(
+                        FicheroAdjunto(
                             nombre="propuesta.pdf",
                             contenido_base64="<base64_del_pdf>",
                             tipo_mime="application/pdf"
                         )
-                    ]
+                    ],
+                    accion=["enviar_correo"]
                 ))
             ),
             (
                 "Se envía correo sin adjuntos confirmando recepción de solicitud.",
-                cls(params=EnviarCorreoRequest(
-                    destinatario="cliente@ejemplo.com",
+                cls(params=MensajeEntrada(
+                    remitente="agente.ia",
+                    destino="cliente@ejemplo.com",
                     asunto="Confirmación de solicitud",
                     mensaje="Hemos recibido su solicitud y la estamos procesando.",
-                    adjuntos=[]
+                    accion=["enviar_correo"]
                 ))
             ),
         ]
     
-    # 💬 Aquí defines tu generador de cuerpo de correo usando el LLM del agente
+    # 💬 Genera el cuerpo del correo con ayuda del LLM del agente
     def generar_body(self) -> str:
         if not self.agent:
             raise RuntimeError("El agente no está disponible en la tool.")
@@ -292,7 +281,7 @@ class EnviarCorreoTool(lr.agent.ToolMessage):
         Escribe un correo profesional y amable con los siguientes datos:
         - Asunto: {data.asunto}
         - Contexto: {data.mensaje}
-        - Destinatario: {data.destinatario}
+        - Destinatario: {data.destino}
         El correo debe tener tono formal y ser breve.
         """
         respuesta = self.agent.llm_response(prompt)
@@ -301,40 +290,42 @@ class EnviarCorreoTool(lr.agent.ToolMessage):
     def handle(self) -> FinalResultTool:
         data = self.params
 
-        if not data.destinatario or not data.asunto or not data.mensaje:
+        # Validación de campos obligatorios
+        if not data.destino or not data.asunto or not data.mensaje:
             return FinalResultTool(
                 info={
                     "respuesta": None,
-                    "mensaje": "Faltan campos obligatorios (destinatario, asunto o mensaje).",
+                    "mensaje": "Faltan campos obligatorios (destino, asunto o mensaje).",
                     "mode": "offline",
                     "status": "error",
                     "reejecutar": False
                 }
             )
 
-            # Pensar / generar respuesta
-        #pienso = proxy_client_manager.think(synth_id, interpretacion_procesada)
-        #respuesta = agente.llm_response(mensaje_con_contexto)
-        #lr.agent.ToolMessage
-
-        #body = pienso["resultado"]["analista_1"][0]
-        #print("🧠 Correo generado correctamente")
-
+        # Generar el cuerpo del correo
         body = self.generar_body()
 
+        # Preparar adjuntos (si los hay)
+        adjuntos = []
+        if data.adjuntos:
+            for adj in data.adjuntos:
+                adjuntos.append((adj.nombre, adj.contenido_base64, adj.tipo_mime))
+
+        # Enviar correo
         correo_cli = CorreoClient(URL_CORREO)
         resultado = correo_cli.enviar_correo(
-            destinatario="peperedondorubio@gmail.com",
-            asunto="Propuesta para empresa",
+            destinatario=data.destino,
+            asunto=data.asunto,
             mensaje=body,
-            adjuntos=[("propuesta.pdf", data.adjuntos, "application/pdf")]
+            adjuntos=adjuntos
         )
 
+        # Evaluar el resultado
         if not resultado.get("success", False):
             return FinalResultTool(
                 info={
                     "respuesta": resultado,
-                    "mensaje": "No se pudo enviar el correo.",
+                    "mensaje": "No se ha podido enviar el correo.",
                     "mode": "online",
                     "status": "error",
                     "reejecutar": False
@@ -350,7 +341,6 @@ class EnviarCorreoTool(lr.agent.ToolMessage):
                 "reejecutar": False
             }
         )
-
 
 # --------------------------------------------------------------------
 # 🔮 TOOL 5: Genera y envia Proposal por correo

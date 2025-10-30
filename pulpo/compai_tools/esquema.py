@@ -4,6 +4,10 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
 
+class FicheroAdjunto(BaseModel):
+    nombre: str = Field(..., description="Nombre del archivo adjunto, por ejemplo 'propuesta.pdf'.")
+    contenido_base64: str = Field(..., description="Contenido del archivo codificado en Base64.")
+    tipo_mime: str = Field(..., description="Tipo MIME del adjunto, por ejemplo 'application/pdf'.")
 # Esquema de datos de entrada de mensajes
 class MensajeEntrada(BaseModel):
     job_id: Optional[str] = Field(None, description="ID único del proceso o conversación")
@@ -15,6 +19,7 @@ class MensajeEntrada(BaseModel):
     accion: Optional[List[str]] = None
     historial: Optional[List[Dict[str, Any]]] = []       # Campo de historial de mensajes anteriores (Opcional) 
     historia: Optional[Dict[str, Any]] = None            # Campo de historia de un mensaje-job (Opcional)
+    adjuntos: Optional[List[FicheroAdjunto]] = []      # Lista de archivos adjuntos (Opcional)
     contexto: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {"timestamp": datetime.now().isoformat()}
     )
