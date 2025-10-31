@@ -21,7 +21,7 @@ from pulpo.util.util import require_env
 ARANGO_HOST = require_env("ARANGO_URL")
 ARANGO_DB_COMPAI = require_env("ARANGO_DB_COMPAI")
 ARANGO_USER = require_env("ARANGO_USER")
-ARANGO_PASSWORD = require_env("ARANGO_PASS")
+ARANGO_PASSWORD = require_env("ARANGO_PASSWORD")
 ARANGO_COLLECTION = require_env("ARANGO_COLLECTION_TAREAS")
 
 TOPIC_TASK = require_env("TOPIC_TASK")
