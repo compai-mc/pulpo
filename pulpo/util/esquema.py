@@ -101,13 +101,13 @@ class CompaiMessage(BaseModel):
     to_name: Optional[str] = Field(
         None, description="Display name of the recipient, if available."
     )
-    timestamp: datetime = Field(
+    timestamp: str = Field(
         default_factory=lambda: datetime.now().isoformat(),
-        description="Creation timestamp for the message record."
+        description="Creation timestamp for the message record (ISO 8601 string)."
     )
-    received_ts: datetime = Field(
+    received_ts: str = Field(
         default_factory=lambda: datetime.now().isoformat(),
-        description="Timestamp (ISO 8601) when the message was received."
+        description="Timestamp (ISO 8601 string) when the message was received."
     )
     processed_ts: Optional[str] = Field(
         default=None,
@@ -141,6 +141,16 @@ class CompaiMessage(BaseModel):
     history: Optional[Dict[str, Any]] = None
     story: Optional[Dict[str, Any]] = None
 
+    def model_dump(self, **kwargs):
+        """
+        Sobrescribe el model_dump para convertir datetime → str (ISO 8601)
+        automáticamente antes de serializar.
+        """
+        data = super().model_dump(**kwargs)
+        for field in ["timestamp", "received_ts", "processed_ts"]:
+            if isinstance(data.get(field), datetime):
+                data[field] = data[field].isoformat()
+        return data
 
 
 class EstadoTarea(str, Enum):
@@ -162,3 +172,5 @@ TRANSICIONES = {
     EstadoTarea.CANCELADA: "procesar_cancelacion",
     EstadoTarea.CHAT: "procesar_chat",
 }
+
+
