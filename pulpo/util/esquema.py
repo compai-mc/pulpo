@@ -101,15 +101,17 @@ class CompaiMessage(BaseModel):
     to_name: Optional[str] = Field(
         None, description="Display name of the recipient, if available."
     )
-    timestamp: Optional[Dict[str, Any]] = Field(
-        default_factory=lambda: {"timestamp": datetime.now().isoformat()},
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now().isoformat(),
         description="Creation timestamp for the message record."
     )
-    received_ts: str = Field(
-        ..., description="Timestamp (ISO 8601) when the message was received."
+    received_ts: datetime = Field(
+        default_factory=lambda: datetime.now().isoformat(),
+        description="Timestamp (ISO 8601) when the message was received."
     )
-    processed_ts: str = Field(
-        ..., description="Timestamp (ISO 8601) when the message was processed by the system."
+    processed_ts: Optional[str] = Field(
+        default=None,
+        description="Timestamp (ISO 8601) when the message was processed by the system."
     )
     parent_message: Optional[str] = Field(
         None, description="Key or ID of the parent message in the conversation thread."

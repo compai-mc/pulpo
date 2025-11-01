@@ -225,7 +225,6 @@ class PropuestaERPTool(lr.agent.ToolMessage):
                 "reejecutar": False
             }
         )
-    
 
 
 # --------------------------------------------------------------------
