@@ -12,12 +12,10 @@ from .ejecucion_forecast import ejecucion_forecast
 from .proposal import ProposalMicroserviceClient
 from .proxy_correo import CorreoClient
 from .manager_historia import HistoriaManager
-from .proxy_erpdolibarr import ERPProxy
 from .proxy_erpdolibarr_sincrono import ERPProxySincrono
-from .esquema import MensajeEntrada,FicheroAdjunto
 
 from pulpo.util.util import require_env
-
+from pulpo.util.esquema import CompaiMessage, Attachments, Attachment
 
 URL_ERP = require_env("ERPDOLIBARR_URL")
 URL_PROPOSAL = require_env("URL_PROPOSAL")
@@ -26,7 +24,6 @@ URL_CORREO = require_env("URL_CORREO")
 # --------------------------------------------------------------------
 # 🔮 TOOL 1: Forecast 
 # --------------------------------------------------------------------
-
 class ForecastRequest(BaseModel):
     fecha: Optional[str] = Field(None, description="Fecha en formato YYYY-MM-DD, opcional.")
 
@@ -141,19 +138,19 @@ class ProductosTool(lr.agent.ToolMessage):
 class PropuestaERPTool(lr.agent.ToolMessage):
     request: str = "create_erp_proposal"
     purpose: str = "Genera una propuesta en el ERP a partir de la historia de un mensaje."
-    params: MensajeEntrada  
+    params: CompaiMessage
 
     @classmethod
     def examples(cls):
         return [
             (
                 "Necesito hacer una propuesta para un cliente.",
-                cls(params=MensajeEntrada(
-                    mensaje="Solicitud de presupuesto paneles solares",
-                    remitente="cliente@empresa.com",
-                    historia={
+                cls(params=CompaiMessage(
+                    message="Solicitud de presupuesto paneles solares",
+                    from_address="cliente@empresa.com",
+                    history={
                         "subject": "Solicitud de presupuesto paneles solares",
-                        "sender": "cliente@empresa.com",
+                        "from_address": "cliente@empresa.com",
                         "categorias": ["energía", "paneles solares"],
                         "productos": ["panel solar 400W", "inversor 5kW"],
                         "comentarios": ["Cliente pide presupuesto para instalación doméstica."]
@@ -162,12 +159,12 @@ class PropuestaERPTool(lr.agent.ToolMessage):
             ),
             (
                 "Mensaje con intención de compra detectada, se genera automáticamente propuesta ERP.",
-                cls(params=MensajeEntrada(
-                    mensaje="Cotización routers Cisco",
-                    remitente="it@empresa.com",
-                    historia={
+                cls(params=CompaiMessage(
+                    message="Cotización routers Cisco",
+                    from_address="it@empresa.com",
+                    history={
                         "subject": "Cotización routers Cisco",
-                        "sender": "it@empresa.com",
+                        "from_address": "it@empresa.com",
                         "categorias": ["redes", "hardware"],
                         "productos": ["router Cisco 9200", "switch PoE 24p"],
                         "comentarios": ["Cliente busca alternativas de red para oficina."]
@@ -177,7 +174,7 @@ class PropuestaERPTool(lr.agent.ToolMessage):
         ]
 
     def handle(self) -> FinalResultTool:
-        historia = self.params.historia
+        historia = self.params.history
         if not historia:
             return FinalResultTool(
                 info={
@@ -237,23 +234,23 @@ class PropuestaERPTool(lr.agent.ToolMessage):
 class EnviarCorreoTool(ToolMessage):
     request: str = "send_email"
     purpose: str = "Envía un correo electrónico con el asunto, cuerpo y adjuntos especificados."
-    params: MensajeEntrada
+    params: CompaiMessage
 
     @classmethod
     def examples(cls):
         return [
             (
                 "Cliente identificado, se envía correo con propuesta adjunta.",
-                cls(params=MensajeEntrada(
-                    remitente="agente.ia",
-                    destino="peperedondorubio@gmail.com",
-                    asunto="Propuesta para empresa",
-                    mensaje="Estimado cliente, adjuntamos la propuesta solicitada.",
-                    adjuntos=[
-                        FicheroAdjunto(
-                            nombre="propuesta.pdf",
-                            contenido_base64="<base64_del_pdf>",
-                            tipo_mime="application/pdf"
+                cls(params=CompaiMessage(
+                    from_address="agente.ia",
+                    to_address="peperedondorubio@gmail.com",
+                    subject="Propuesta para empresa",
+                    message="Estimado cliente, adjuntamos la propuesta solicitada.",
+                    attachments=[
+                        Attachment(
+                            name="propuesta.pdf",
+                            content_base64="<base64_del_pdf>",
+                            mimetype="application/pdf"
                         )
                     ],
                     accion=["enviar_correo"]
@@ -261,12 +258,12 @@ class EnviarCorreoTool(ToolMessage):
             ),
             (
                 "Se envía correo sin adjuntos confirmando recepción de solicitud.",
-                cls(params=MensajeEntrada(
-                    remitente="agente.ia",
-                    destino="cliente@ejemplo.com",
-                    asunto="Confirmación de solicitud",
-                    mensaje="Hemos recibido su solicitud y la estamos procesando.",
-                    accion=["enviar_correo"]
+                cls(params=CompaiMessage(
+                    from_address="agente.ia",
+                    to_address="cliente@ejemplo.com",
+                    subject="Confirmación de solicitud",
+                    message="Hemos recibido su solicitud y la estamos procesando.",
+                    action=["enviar_correo"]
                 ))
             ),
         ]
@@ -302,7 +299,7 @@ class EnviarCorreoTool(ToolMessage):
 
 
     def handle(self) -> FinalResultTool:
-        historia = self.params.historia
+        historia = self.params.history
         if not historia:
             return FinalResultTool(
                 info={
@@ -376,31 +373,31 @@ class EnviarCorreoTool(ToolMessage):
 class EnviarPropuestaTool(ToolMessage):
     request: str = "create_and_send_proposal"
     purpose: str = "Crea una propuesta en el ERP y la envía por correo electrónico al cliente."
-    params: MensajeEntrada
+    params: CompaiMessage
 
     @classmethod
     def examples(cls):
         return [
             (
                 "Mensaje indica solicitud de presupuesto; se genera la propuesta ERP y se envía por correo.",
-                cls(params=MensajeEntrada(
-                    remitente="agente.ia",
-                    destino="cliente@empresa.com",
-                    asunto="Propuesta instalación solar",
-                    mensaje="Estimado cliente, adjuntamos la propuesta solicitada. Un cordial saludo.",
-                    historia={
+                cls(params=CompaiMessage(
+                    from_address="agente.ia",
+                    to_address="cliente@empresa.com",
+                    subject="Propuesta instalación solar",
+                    message="Estimado cliente, adjuntamos la propuesta solicitada. Un cordial saludo.",
+                    history={
                         "subject": "Presupuesto instalación solar",
                         "sender": "cliente@empresa.com",
                         "productos": ["panel solar 400W", "batería 5kWh"],
                         "comentarios": ["Cliente solicita presupuesto completo con instalación."]
                     },
-                    accion=["create_and_send_proposal"]
+                    action=["create_and_send_proposal"]
                 ))
             ),
         ]
 
     def handle(self) -> FinalResultTool:
-        historia = self.params.historia
+        historia = self.params.history
         if not historia:
             return FinalResultTool(
                 info={

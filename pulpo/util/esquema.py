@@ -2,13 +2,12 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 from datetime import datetime
-
+import uuid
 
 class Attachment(BaseModel):
     name: str = Field(..., description="Nombre del archivo adjunto, por ejemplo 'propuesta.pdf'.")
     content_base64: str = Field(..., description="Contenido del archivo codificado en Base64.")
     mimetype: str = Field(..., description="Tipo MIME del adjunto, por ejemplo 'application/pdf'.")
-
 
 class Attachments(BaseModel):
     """Information about attachments found in the message."""
@@ -17,7 +16,10 @@ class Attachments(BaseModel):
     has_attachments: bool = Field(..., description="Whether the message contains any attachments.")
     has_pdfs: bool = Field(..., description="Whether the message contains PDF attachments.")
     pdf_filenames: Optional[List[str]] = Field(default=None, description="List of PDF filenames found in the message.")
-
+    atachment_list: Optional[List[Attachment]] = Field(
+        default=None,
+        description="List of attachment details including name, content in Base64, and MIME type."
+    )
 
 class CurrentMessage(BaseModel):
     """Basic information about the current processed message."""
@@ -75,30 +77,63 @@ class Analysis(BaseModel):
 
 class CompaiMessage(BaseModel):
     """Schema defining the structure of a processed message."""
-    message_key: str = Field(..., description="Unique identifier of the message in the source system.")
-    message_id: Optional[str] = Field(None, description="Global unique identifier for the message.")
-    job_id: Optional[str] = Field(None, description="Optional job identifier used by processing pipelines or workflows.")
-    subject: Optional[str] = Field(None, description="Subject line of the message.")
-    sender: Optional[str] = Field(None, description="Address of the sender.")
-    sender_name: Optional[str] = Field(None, description="Display name of the sender, if available.")
-    timestamp: Optional[Dict[str, Any]] = Field(default_factory=lambda: {"timestamp": datetime.now().isoformat()})
-    received_ts: str = Field(..., description="Timestamp (ISO 8601) when the message was received.")
-    processed_ts: str = Field(..., description="Timestamp (ISO 8601) when the message was processed by the system.")
-    parent_message: Optional[str] = Field(None, description="Key or ID of the parent message in the conversation thread.")
-    thread_depth: Optional[int] = Field(None, description="Depth level within the conversation thread (0 = root message).")
-    decide_stop: Optional[bool] = Field(None, description="Indicates whether message processing or classification should be stopped.")
-    message: str = Field(..., description="Full cleaned text content of the message body.")
+
+    message_key: str = Field(
+        default_factory=lambda: uuid.uuid4().hex,
+        description="Unique identifier of the message in the source system."
+    )
+    job_id: Optional[str] = Field(
+        None,
+        description="Optional job identifier used by processing pipelines or workflows."
+    )
+    subject: Optional[str] = Field(
+        None, description="Subject line of the message."
+    )
+    from_address: Optional[str] = Field(
+        None, description="Address of the sender."
+    )
+    from_name: Optional[str] = Field(
+        None, description="Display name of the sender, if available."
+    )
+    to_address: Optional[str] = Field(
+        None, description="Address of the recipient."
+    )
+    to_name: Optional[str] = Field(
+        None, description="Display name of the recipient, if available."
+    )
+    timestamp: Optional[Dict[str, Any]] = Field(
+        default_factory=lambda: {"timestamp": datetime.now().isoformat()},
+        description="Creation timestamp for the message record."
+    )
+    received_ts: str = Field(
+        ..., description="Timestamp (ISO 8601) when the message was received."
+    )
+    processed_ts: str = Field(
+        ..., description="Timestamp (ISO 8601) when the message was processed by the system."
+    )
+    parent_message: Optional[str] = Field(
+        None, description="Key or ID of the parent message in the conversation thread."
+    )
+    thread_depth: Optional[int] = Field(
+        None, description="Depth level within the conversation thread (0 = root message)."
+    )
+    decide_stop: Optional[bool] = Field(
+        None, description="Indicates whether message processing or classification should be stopped."
+    )
+    message: str = Field(
+        ..., description="Full cleaned text content of the message body."
+    )
     items_count: Optional[int] = None
     items: Optional[List[Dict[str, Any]]] = None
     related_messages_count: Optional[int] = None
-    attachments: Optional[Attachments] = None
+    attachments: Optional["Attachments"] = None
     pdf_attachments: Optional[List[Dict[str, Any]]] = None
-    current_message: Optional[CurrentMessage] = None
-    message_history: Optional[MessageHistory] = None
-    processing_info: Optional[ProcessingInfo] = None
+    current_message: Optional["CurrentMessage"] = None
+    message_history: Optional["MessageHistory"] = None
+    processing_info: Optional["ProcessingInfo"] = None
     processing_complete: Optional[bool] = None
-    metadata: Optional[Metadata] = None
-    analysis: Optional[Analysis] = None
+    metadata: Optional["Metadata"] = None
+    analysis: Optional["Analysis"] = None
     status: Optional[List[str]] = None
     action: Optional[List[str]] = None
     history: Optional[Dict[str, Any]] = None
