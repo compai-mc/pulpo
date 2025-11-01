@@ -17,7 +17,7 @@ from .proxy_erpdolibarr_sincrono import ERPProxySincrono
 from .esquema import MensajeEntrada,FicheroAdjunto
 
 from pulpo.util.util import require_env
-import asyncio
+
 
 URL_ERP = require_env("ERPDOLIBARR_URL")
 URL_PROPOSAL = require_env("URL_PROPOSAL")
