@@ -141,17 +141,6 @@ class CompaiMessage(BaseModel):
     history: Optional[Dict[str, Any]] = None
     story: Optional[Dict[str, Any]] = None
 
-    def model_dump(self, **kwargs):
-        """
-        Sobrescribe el model_dump para convertir datetime → str (ISO 8601)
-        automáticamente antes de serializar.
-        """
-        data = super().model_dump(**kwargs)
-        for field in ["timestamp", "received_ts", "processed_ts"]:
-            if isinstance(data.get(field), datetime):
-                data[field] = data[field].isoformat()
-        return data
-
 
 class EstadoTarea(str, Enum):
     PENDIENTE = "pending"
