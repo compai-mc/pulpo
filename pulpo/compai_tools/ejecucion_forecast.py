@@ -29,6 +29,7 @@ def _crear_tarea_wekan(mensaje: str):
 
 async def _forecast_en_background(fecha: str):
 
+    print(f"Iniciando procesamiento de forecast en background para {fecha}")
 
     # Normalizar fecha a formato ISO (YYYY-MM-DD)
     try:
@@ -80,6 +81,9 @@ def ejecucion_forecast(fecha: str) -> str:
         asyncio.run(_forecast_en_background(fecha))
     
     # Ejecutar en un hilo separado para no bloquear
+
+    print("iniciando hilo de forecast...")
+
     import threading
     thread = threading.Thread(target=_lanzar_background)
     thread.daemon = True  # Para que no impida la salida del programa
@@ -96,7 +100,7 @@ if __name__ == "__main__":
 
     async def main():
         # Ejecuta el forecast
-        resultado = await ejecucion_forecast(fecha)
+        resultado = ejecucion_forecast(fecha)
         print(resultado)
 
         # Mantener el programa corriendo sin bloquear

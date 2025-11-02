@@ -35,24 +35,32 @@ class ForecastTool(lr.agent.ToolMessage):
 
     @classmethod
     def examples(cls):
+        hoy = date.today().isoformat()
+
         return [
             (
-                "Usuario pidió 'forecast para hoy' (palabra clave: forecast), ejecuto ejecucion_forecast UNA VEZ",
+                f"Hoy es {hoy}. El usuario dice 'dame el forecast para hoy'. "
+                "Reconozco la palabra clave 'forecast' y entiendo que la fecha es la actual. "
+                "Ejecuto la herramienta una vez para el día de hoy.",
                 cls(params=ForecastRequest(fecha=None)),
             ),
             (
-                "Cliente quiere 'informe de previsión del mes pasado' (sinónimo de forecast), ejecuto herramienta UNA VEZ",
-                cls(params=ForecastRequest(fecha="2025-01-16")),
+                f"Hoy es {hoy}. El cliente solicita 'el informe de previsión del mes pasado'. "
+                "Interpreto 'mes pasado' como la fecha correspondiente al mes anterior al actual. "
+                "Ejecuto la herramienta una vez con esa fecha.",
+                cls(params=ForecastRequest(fecha=None)),
             ),
             (
-                "Usuario mencionó 'previsión mañana' (palabras clave: previsión + fecha), ejecuto automáticamente UNA VEZ",
-                cls(params=ForecastRequest(fecha="2025-01-16")),
+                f"Hoy es {hoy}. El usuario pide 'la previsión de mañana'. "
+                "Interpreto 'mañana' como un día después de la fecha actual y ejecuto la herramienta una vez con esa fecha.",
+                cls(params=ForecastRequest(fecha=None)),
             ),
         ]
 
     def handle(self) -> FinalResultTool:
         fecha = self.params.fecha or date.today().isoformat()
         forecast = ejecucion_forecast(fecha)
+        print(f"✅ Forecast generado para {fecha}: {forecast}")
         return FinalResultTool(
             info={
                 "fecha": fecha,
