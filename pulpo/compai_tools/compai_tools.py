@@ -275,7 +275,7 @@ class EnviarCorreoTool(ToolMessage):
         data = self.params
         prompt = f"""
         Escribe un correo profesional y amable con los siguientes datos:
-        - Asunto: {data.asunto}
+        - Asunto: {data.subject}
         - Contexto: {interpretacion_procesada.get("productos", "")}
         - Destinatario: {interpretacion_procesada.get("empresa", {}).get("name", "Cliente")}
         El correo debe tener tono formal y ser breve.
@@ -428,7 +428,7 @@ class EnviarPropuestaTool(ToolMessage):
 
         # Extraer el PDF generado
         pdf_base64 = resultado_propuesta.get("adjunto")
-        self.params.attachments = [("propuesta.pdf",pdf_base64,"application/pdf")]
+        self.params.attachments = [("propuesta.pdf", pdf_base64, "application/pdf")]
         # 2️⃣ Enviar correo con la propuesta adjunta
         correo_tool = EnviarCorreoTool(
             params=self.params
