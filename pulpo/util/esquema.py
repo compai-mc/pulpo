@@ -101,9 +101,15 @@ class CompaiMessage(BaseModel):
     to_name: Optional[str] = Field(
         None, description="Display name of the recipient, if available."
     )
-    timestamp: str = Field(default_factory=datetime.now().isoformat)
-    received_ts: str = Field(default_factory=datetime.now().isoformat)
-    processed_ts: Optional[str] = Field(
+    timestamp: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp (ISO 8601) indicating when the message object was created."
+    )
+    received_ts: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp (ISO 8601) indicating when the message was received by the system."
+    )
+    processed_ts: Optional[datetime] = Field(
         default=None,
         description="Timestamp (ISO 8601) when the message was processed by the system."
     )
