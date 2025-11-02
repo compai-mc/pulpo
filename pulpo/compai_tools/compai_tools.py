@@ -335,9 +335,9 @@ class EnviarCorreoTool(ToolMessage):
         print("Clase de correo iniciada")
         resultado = correo_cli.enviar_correo(
             destinatario=email,
-            asunto=self.params.asunto,
+            asunto=self.params.subject,
             mensaje=body,
-            adjuntos=self.params.adjuntos
+            adjuntos=self.params.attachments
         )
 
         print("Correo enviado")
@@ -428,7 +428,7 @@ class EnviarPropuestaTool(ToolMessage):
 
         # Extraer el PDF generado
         pdf_base64 = resultado_propuesta.get("adjunto")
-        self.params.adjuntos = [("propuesta.pdf",pdf_base64,"application/pdf")]
+        self.params.attachments = [("propuesta.pdf",pdf_base64,"application/pdf")]
         # 2️⃣ Enviar correo con la propuesta adjunta
         correo_tool = EnviarCorreoTool(
             params=self.params
