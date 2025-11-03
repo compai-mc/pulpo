@@ -473,7 +473,7 @@ class EnviarPropuestaTool(ToolMessage):
         )
 
 
-class BrownDispatcher(Agent):
+class BrownDispatcher():
     def __init__(self, tools: dict[str, Type[lr.agent.ToolMessage]]):
         super().__init__()
         self.tools = tools

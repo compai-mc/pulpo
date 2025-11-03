@@ -63,9 +63,18 @@ class CompaiMessage(BaseModel):
         default=None,
         description="Identificador opcional del trabajo o pipeline asociado al procesamiento del mensaje."
     )
+    active: Optional[bool] = Field(
+        default=None, description="Indica si la conversacion está activa o ya cerrada"
+    )
+
     subject: Optional[str] = Field(
         default=None, description="Asunto o título del mensaje."
     )
+    message: str = Field(
+        ..., description="Contenido textual completo y limpio del cuerpo del mensaje."
+    )
+
+
     from_address: Optional[str] = Field(
         default=None, description="Dirección de mensaje del remitente del mensaje."
     )
@@ -78,6 +87,7 @@ class CompaiMessage(BaseModel):
     to_name: Optional[str] = Field(
         default=None, description="Nombre visible del destinatario, si está disponible."
     )
+
     timestamp: datetime = Field(
         default_factory=datetime.now,
         description="Marca temporal (ISO 8601) que indica cuándo se creó el objeto de mensaje."
@@ -94,13 +104,6 @@ class CompaiMessage(BaseModel):
     thread_depth: Optional[int] = Field(
         default=None, description="Nivel de profundidad dentro del hilo de conversación (0 = mensaje raíz)."
     )
-    decide_stop: Optional[bool] = Field(
-        default=None, description="Indica si debe detenerse el procesamiento o la clasificación del mensaje."
-    )
-    message: str = Field(
-        ..., description="Contenido textual completo y limpio del cuerpo del mensaje."
-    )
-
     message_history: Optional[MessageHistory] = Field(
         default=None, description="Historial de conversación asociado con el mensaje actual."
     )
@@ -126,7 +129,7 @@ class CompaiMessage(BaseModel):
         default=None, description="Lista de estados actuales del mensaje dentro del flujo de procesamiento."
     )
     action: Optional[List[str]] = Field(
-        default=None, description="Acciones realizadas o pendientes asociadas a este mensaje."
+        default=None, description="Acciones que se deben realizar a este mensaje."
     )
     history: Optional[Dict[str, Any]] = Field(
         default=None, description="Historia de la conversacion o interacciones previas relacionadas con el mensaje."
@@ -138,7 +141,7 @@ class CompaiMessage(BaseModel):
 
 class EstadoTarea(str, Enum):
     """Enumeración de los posibles estados de una tarea dentro del flujo de procesamiento."""
-    PENDIENTE = "pending"
+    PENDIENTE = "inbox"
     INTERPRETADO = "interpreted"
     EN_PROGRESO = "in_progress"
     COMPLETADA = "completed"
