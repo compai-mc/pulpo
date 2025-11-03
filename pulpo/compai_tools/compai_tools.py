@@ -471,3 +471,24 @@ class EnviarPropuestaTool(ToolMessage):
                 "reejecutar": False
             }
         )
+
+
+class BrownDispatcher(Agent):
+    def __init__(self, tools: dict[str, Type[lr.agent.ToolMessage]]):
+        super().__init__()
+        self.tools = tools
+
+    def handle_message(self, mensaje):
+        estados = mensaje.estado or []
+        print(f"📦 Estados detectados: {estados}")
+
+        # Buscar la primera tool aplicable
+        for estado in estados:
+            if estado in self.tools:
+                ToolClass = self.tools[estado]
+                print(f"⚙️ Ejecutando Tool: {ToolClass.__name__} para estado {estado}")
+                tool = ToolClass(params=mensaje)
+                return tool.handle()
+
+        print("❌ Ninguna Tool aplicable a los estados recibidos.")
+        return None

@@ -5,144 +5,139 @@ from datetime import datetime
 import uuid
 
 class Attachment(BaseModel):
+    """Representa un archivo adjunto dentro de un mensaje."""
     name: str = Field(..., description="Nombre del archivo adjunto, por ejemplo 'propuesta.pdf'.")
     content_base64: str = Field(..., description="Contenido del archivo codificado en Base64.")
     mimetype: str = Field(..., description="Tipo MIME del adjunto, por ejemplo 'application/pdf'.")
 
+
 class Attachments(BaseModel):
-    """Information about attachments found in the message."""
-    total_count: int = Field(..., description="Total number of attachments found.")
-    pdf_count: int = Field(..., description="Number of PDF attachments found.")
-    has_attachments: bool = Field(..., description="Whether the message contains any attachments.")
-    has_pdfs: bool = Field(..., description="Whether the message contains PDF attachments.")
-    pdf_filenames: Optional[List[str]] = Field(default=None, description="List of PDF filenames found in the message.")
-    atachment_list: Optional[List[Attachment]] = Field(
+    """Información agregada sobre los archivos adjuntos detectados en el mensaje."""
+    total_count: int = Field(..., description="Número total de archivos adjuntos encontrados en el mensaje.")
+    pdf_count: int = Field(..., description="Número de archivos PDF entre los adjuntos.")
+    has_attachments: bool = Field(..., description="Indica si el mensaje contiene algún archivo adjunto.")
+    has_pdfs: bool = Field(..., description="Indica si el mensaje contiene adjuntos en formato PDF.")
+    pdf_filenames: Optional[List[str]] = Field(default=None, description="Lista de nombres de archivos PDF encontrados.")
+    attachment_list: Optional[List[Attachment]] = Field(
         default=None,
-        description="List of attachment details including name, content in Base64, and MIME type."
+        description="Lista detallada de los archivos adjuntos, incluyendo nombre, contenido y tipo MIME."
     )
-
-class CurrentMessage(BaseModel):
-    """Basic information about the current processed message."""
-    message_key: str = Field(..., description="Key of the message being currently processed.")
-    sender: str = Field(..., description="Address of the sender of this message.")
-    subject: str = Field(..., description="Subject of the current message.")
-    received_ts: int = Field(..., description="UNIX timestamp when this message was received.")
-
-
-class ParentMessage(BaseModel):
-    """Information about the immediate parent message in the thread."""
-    message_key: str
-    score: float
-    subject: str
-    received_ts: int
 
 
 class RelatedMessage(BaseModel):
-    """Information about related messages (siblings, replies, forwards)."""
-    message_key: str
-    score: float
-    received_ts: int
-    subject: str
+    """Información sobre mensajes relacionados (respuestas, reenvíos o mensajes similares)."""
+    message_key: str = Field(..., description="Identificador único del mensaje relacionado.")
+    score: float = Field(..., description="Nivel de similitud o relación con el mensaje actual.")
+    received_ts: int = Field(..., description="Timestamp UNIX del momento en que se recibió el mensaje relacionado.")
+    subject: str = Field(..., description="Asunto del mensaje relacionado.")
 
 
 class MessageHistory(BaseModel):
-    """Information about related messages in the same conversation thread."""
-    parent: Optional[ParentMessage] = None
-    related: Optional[List[RelatedMessage]] = None
-
-
-class ProcessingInfo(BaseModel):
-    """Internal information about message processing and enrichment."""
-    embedding_stored: Optional[bool] = None
-    similarity_count: Optional[int] = None
-    enrichment_status: Optional[str] = None
-    processing_version: Optional[str] = None
-
-
-class Metadata(BaseModel):
-    """Metadata about the storage and source of this message record."""
-    source: Optional[str] = None
-    database_key: Optional[str] = None
-    vector_stored: Optional[bool] = None
-    has_conversation: Optional[bool] = None
+    """Estructura que representa el historial de conversación relacionado con este mensaje."""
+    parent: Optional[RelatedMessage] = Field(
+        default=None,
+        description="Mensaje padre directo dentro del hilo de conversación."
+    )
+    related: Optional[List[RelatedMessage]] = Field(
+        default=None,
+        description="Lista de mensajes relacionados dentro del mismo hilo (respuestas o reenvíos)."
+    )
 
 
 class Analysis(BaseModel):
-    """Sentiment and classification analysis results for the message."""
-    polarity: Optional[float] = None
-    category: Optional[str] = None
-    sentiment: Optional[str] = None
-    language: Optional[str] = None
+    """Resultados del análisis de sentimiento, categoría y lenguaje del mensaje."""
+    polarity: Optional[float] = Field(default=None, description="Valor numérico que representa la polaridad del texto (-1 negativo, 1 positivo).")
+    category: Optional[str] = Field(default=None, description="Categoría o tipo asignado al mensaje tras la clasificación automática.")
+    sentiment: Optional[str] = Field(default=None, description="Sentimiento detectado (positivo, negativo o neutro).")
+    language: Optional[str] = Field(default=None, description="Código del idioma detectado en el texto (por ejemplo, 'es' o 'en').")
 
 
 class CompaiMessage(BaseModel):
-    """Schema defining the structure of a processed message."""
+    """Esquema principal que define la estructura de un mensaje procesado por el sistema."""
 
     message_key: str = Field(
         default_factory=lambda: uuid.uuid4().hex,
-        description="Unique identifier of the message in the source system."
+        description="Identificador único del mensaje dentro del sistema origen."
     )
     job_id: Optional[str] = Field(
-        None,
-        description="Optional job identifier used by processing pipelines or workflows."
+        default=None,
+        description="Identificador opcional del trabajo o pipeline asociado al procesamiento del mensaje."
     )
     subject: Optional[str] = Field(
-        None, description="Subject line of the message."
+        default=None, description="Asunto o título del mensaje."
     )
     from_address: Optional[str] = Field(
-        None, description="Address of the sender."
+        default=None, description="Dirección de mensaje del remitente del mensaje."
     )
     from_name: Optional[str] = Field(
-        None, description="Display name of the sender, if available."
+        default=None, description="Nombre visible del remitente, si está disponible."
     )
     to_address: Optional[str] = Field(
-        None, description="Address of the recipient."
+        default=None, description="Dirección del destinatario."
     )
     to_name: Optional[str] = Field(
-        None, description="Display name of the recipient, if available."
+        default=None, description="Nombre visible del destinatario, si está disponible."
     )
     timestamp: datetime = Field(
         default_factory=datetime.now,
-        description="Timestamp (ISO 8601) indicating when the message object was created."
+        description="Marca temporal (ISO 8601) que indica cuándo se creó el objeto de mensaje."
     )
     received_ts: datetime = Field(
         default_factory=datetime.now,
-        description="Timestamp (ISO 8601) indicating when the message was received by the system."
+        description="Marca temporal (ISO 8601) que indica cuándo se recibió el mensaje en el sistema."
     )
     processed_ts: Optional[datetime] = Field(
         default=None,
-        description="Timestamp (ISO 8601) when the message was processed by the system."
+        description="Marca temporal (ISO 8601) que indica cuándo el mensaje fue procesado completamente."
     )
-    parent_message: Optional[str] = Field(
-        None, description="Key or ID of the parent message in the conversation thread."
-    )
+
     thread_depth: Optional[int] = Field(
-        None, description="Depth level within the conversation thread (0 = root message)."
+        default=None, description="Nivel de profundidad dentro del hilo de conversación (0 = mensaje raíz)."
     )
     decide_stop: Optional[bool] = Field(
-        None, description="Indicates whether message processing or classification should be stopped."
+        default=None, description="Indica si debe detenerse el procesamiento o la clasificación del mensaje."
     )
     message: str = Field(
-        ..., description="Full cleaned text content of the message body."
+        ..., description="Contenido textual completo y limpio del cuerpo del mensaje."
     )
-    items_count: Optional[int] = None
-    items: Optional[List[Dict[str, Any]]] = None
-    related_messages_count: Optional[int] = None
-    attachments: Optional["Attachments"] = None
-    pdf_attachments: Optional[List[Dict[str, Any]]] = None
-    current_message: Optional["CurrentMessage"] = None
-    message_history: Optional["MessageHistory"] = None
-    processing_info: Optional["ProcessingInfo"] = None
-    processing_complete: Optional[bool] = None
-    metadata: Optional["Metadata"] = None
-    analysis: Optional["Analysis"] = None
-    status: Optional[List[str]] = None
-    action: Optional[List[str]] = None
-    history: Optional[Dict[str, Any]] = None
-    story: Optional[Dict[str, Any]] = None
+
+    message_history: Optional[MessageHistory] = Field(
+        default=None, description="Historial de conversación asociado con el mensaje actual."
+    )
+    related_messages_count: Optional[int] = Field(
+        default=None, description="Número de mensajes relacionados dentro del hilo de conversación."
+    )
+
+    attachments_count: Optional[int] = Field(
+        default=None, description="Número total de adjuntos asociados al mensaje."
+    )
+    attachments: Optional[Attachments] = Field(
+        default=None, description="Información detallada sobre los archivos adjuntos del mensaje."
+    )
+    pdf_attachments: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Lista de archivos PDF extraídos o procesados del mensaje."
+    )
+
+    analysis: Optional[Analysis] = Field(
+        default=None, description="Resultados del análisis semántico y emocional del mensaje."
+    )
+
+    status: Optional[List[str]] = Field(
+        default=None, description="Lista de estados actuales del mensaje dentro del flujo de procesamiento."
+    )
+    action: Optional[List[str]] = Field(
+        default=None, description="Acciones realizadas o pendientes asociadas a este mensaje."
+    )
+    history: Optional[Dict[str, Any]] = Field(
+        default=None, description="Historia de la conversacion o interacciones previas relacionadas con el mensaje."
+    )
+    story: Optional[Dict[str, Any]] = Field(
+        default=None, description="Contexto narrativo o historia generada en torno al mensaje."
+    )
 
 
 class EstadoTarea(str, Enum):
+    """Enumeración de los posibles estados de una tarea dentro del flujo de procesamiento."""
     PENDIENTE = "pending"
     INTERPRETADO = "interpreted"
     EN_PROGRESO = "in_progress"
@@ -151,7 +146,8 @@ class EstadoTarea(str, Enum):
     CANCELADA = "cancelled"
     CHAT = "chat"
 
-# Transiciones asociadas a cada estado
+
+# Diccionario que define la transición o acción asociada a cada estado de tarea.
 TRANSICIONES = {
     EstadoTarea.PENDIENTE: "procesar_nueva_tarea",
     EstadoTarea.INTERPRETADO: "continuar_tarea",
@@ -161,5 +157,3 @@ TRANSICIONES = {
     EstadoTarea.CANCELADA: "procesar_cancelacion",
     EstadoTarea.CHAT: "procesar_chat",
 }
-
-
