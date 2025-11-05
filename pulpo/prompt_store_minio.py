@@ -108,13 +108,8 @@ class MinioPromptStore:
         metadata = metadata.copy() if metadata else {}
 
         job_id = metadata.get("job_id")
-        environment = (
-            metadata.get("environment")
-            or os.getenv("PROMPTS_ENV")
-            or os.getenv("ENVIRONMENT")
-            or "dev"
-        )
-        namespace = metadata.get("namespace") or os.getenv("PROMPTS_NAMESPACE") or "compai"
+        environment = metadata.get("environment") or os.getenv("ENVIRONMENT") or "dev"
+        namespace = metadata.get("namespace") or os.getenv("NAMESPACE") or "compai"
 
         job_segment = "no-job"
         if job_id:
