@@ -16,6 +16,8 @@ __all__ = [
     "store_llm_prompt",
     "list_llm_prompts",
     "get_llm_prompt",
+    "download_llm_prompt",
+    "download_llm_prompts",
 ]
 
 
@@ -23,15 +25,15 @@ class MinioPromptStore:
     """Almacena y recupera prompts LLM desde MinIO."""
 
     def __init__(self, *, bucket: Optional[str] = None) -> None:
-        self._bucket = bucket or os.getenv("PROMPTS_MINIO_BUCKET", "llm-prompts")
+        self._bucket = bucket or os.getenv("MINIO_PROMPTS_BUCKET", "llm-prompts")
         self._client = self._build_client()
         if self._client:
             self._ensure_bucket()
 
     def _build_client(self) -> Optional[Minio]:
-        url = os.getenv("PROMPTS_MINIO_URL")
-        access_key = os.getenv("PROMPTS_MINIO_ACCESS_KEY")
-        secret_key = os.getenv("PROMPTS_MINIO_SECRET_KEY")
+        url = os.getenv("PROMPTS_MINIO_URL") or os.getenv("MINIO_URL")
+        access_key = os.getenv("PROMPTS_MINIO_ACCESS_KEY") or os.getenv("ACCESS_KEY")
+        secret_key = os.getenv("PROMPTS_MINIO_SECRET_KEY") or os.getenv("SECRET_KEY")
 
         if not url or not access_key or not secret_key:
             log.debug(
@@ -103,18 +105,23 @@ class MinioPromptStore:
         if metadata:
             payload["metadata"] = metadata
 
-        job_id = None
-        if metadata and isinstance(metadata, dict):
-            job_id = metadata.get("job_id")
+        metadata = metadata.copy() if metadata else {}
+
+        job_id = metadata.get("job_id")
+        environment = (
+            metadata.get("environment")
+            or os.getenv("PROMPTS_ENV")
+            or os.getenv("ENVIRONMENT")
+            or "dev"
+        )
+        namespace = metadata.get("namespace") or os.getenv("PROMPTS_NAMESPACE") or "compai"
 
         job_segment = "no-job"
         if job_id:
             job_segment = str(job_id).replace("/", "_").strip() or job_segment
 
         agent_segment = agent_name.replace(" ", "_").lower() or "agent"
-        object_name = (
-            f"{timestamp:%Y/%m/%d}/{job_segment}/{agent_segment}-{timestamp:%H%M%S%f}.json"
-        )
+        object_name = f"{namespace}/{environment}/{job_segment}-{agent_segment}-{timestamp:%Y%m%d%H%M%S%f}.json"
 
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         data_stream = io.BytesIO(data)
@@ -167,6 +174,15 @@ class MinioPromptStore:
             log.error("Unexpected error retrieving prompt '%s': %s", object_name, exc)
         return None
 
+    def download_many(self, prefix: str) -> Dict[str, Dict[str, Any]]:
+        """Descarga todos los prompts bajo un prefijo y los devuelve como dict {object_name: payload}."""
+        results: Dict[str, Dict[str, Any]] = {}
+        for name in self.list(prefix=prefix, recursive=True):
+            data = self.get(name)
+            if data is not None:
+                results[name] = data
+        return results
+
 
 # ---------------------------------------------------------------------- #
 # Helper functions
@@ -190,3 +206,12 @@ def get_llm_prompt(object_name: str) -> Optional[Dict[str, Any]]:
     """Obtiene un prompt almacenado por su nombre de objeto."""
     return _get_store().get(object_name)
 
+
+def download_llm_prompt(object_name: str) -> Optional[Dict[str, Any]]:
+    """Alias de `get_llm_prompt` para mantener compatibilidad semántica."""
+    return get_llm_prompt(object_name)
+
+
+def download_llm_prompts(prefix: str) -> Dict[str, Dict[str, Any]]:
+    """Recupera todos los prompts bajo un prefijo dado (p.ej. 'compai/dev')."""
+    return _get_store().download_many(prefix)
