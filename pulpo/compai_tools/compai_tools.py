@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Type
 import os
 
 from langroid.pydantic_v1 import BaseModel, Field
