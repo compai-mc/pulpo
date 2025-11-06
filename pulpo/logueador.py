@@ -10,6 +10,10 @@ class Logueador:
         self.logger.propagate = propagate
 
     def configurar(self, fichero, nivel):
+
+        # Limpia el root logger para evitar duplicación por consola
+        logging.getLogger().handlers.clear()
+
         """Configura el logger con fichero y nivel inicial."""
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
