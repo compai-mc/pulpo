@@ -74,7 +74,7 @@ def extraer_json_del_texto(texto: str) -> dict:
         match = re.search(r"(\{.*\})", texto, re.DOTALL)
 
     if not match:
-        raise ValueError("No se encontró bloque JSON en el texto")
+        return {"raw": texto.strip()}
 
     json_str = match.group(1).strip()
 
@@ -140,7 +140,7 @@ def extraer_json_del_texto(texto: str) -> dict:
     try:
         data = ast.literal_eval(fixed)
     except Exception as e:
-        raise ValueError(f"No se pudo reparar el JSON: {e}\nTexto:\n{fixed}")
+        return {"raw": texto.strip()}
 
 
     # ✅ 9. Reparar JSONs anidados en strings (como "interpretacion")
