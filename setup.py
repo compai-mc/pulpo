@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="4.5.13",
+    version="4.5.14",
     packages=find_packages(),
     install_requires=[
         "requests", 
@@ -10,5 +10,6 @@ setup(
         "python-arango",
         "kafka-python",
         "langroid"
+        "hvac"
     ],
 )

@@ -5,6 +5,8 @@ from json.decoder import scanstring
 import importlib
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+import hvac
 
 def require_env(var_name: str) -> str:
     value = os.getenv(var_name)
@@ -13,101 +15,145 @@ def require_env(var_name: str) -> str:
     return value
 
 
-def extraer_json_del_texto(texto: str) -> dict:
-      
+def load_env(
+        vault_addr:str = "http://alcazar:8200",
+        vault_token:str = "root",
+        vault_path:str = "des/compai",
+        env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env"
+        ):
+    """Carga las variables de entorno desde HashiCorp Vault si es posible,"""
 
-        """
-        Extrae y arregla un bloque JSON de un texto que puede venir malformado,
-        con backticks, comillas simples, comas colgantes, etc.
-        """
-
-        # 1. Buscar bloque con ```json ... ```
-        match = re.search(r"```json\s*(\{.*?\})\s*```", texto, re.DOTALL)
-        if not match:
-            match = re.search(r"(\{.*\})", texto, re.DOTALL)
-
-        if not match:
-            raise ValueError("No se encontró bloque JSON en el texto")
-
-        json_str = match.group(1).strip()
-
-        # 2. Limpiar ```json ... ``` o ```
-        if json_str.startswith("```json"):
-            json_str = json_str[len("```json"):].strip()
-        elif json_str.startswith("```"):
-            json_str = json_str[len("```"):].strip()
-        if json_str.endswith("```"):
-            json_str = json_str[:-len("```")].strip()
-
-        # 3. Intentar parsear directo
+    def load_all_secrets(client, base_path):
+        """Carga todas las claves de todos los subdirectorios recursivamente."""
         try:
-            return json.loads(json_str)
-        except Exception:
+            # Intenta listar los subpaths del directorio actual
+            response = client.secrets.kv.v2.list_secrets(path=base_path)
+            keys = response["data"]["keys"]
+
+            for key in keys:
+                full_path = f"{base_path.rstrip('/')}/{key}"
+                if key.endswith("/"):
+                    # Es un subdirectorio: recurse
+                    load_all_secrets(client, full_path)
+                else:
+                    # Es una clave: leer sus valores
+                    secret_data = client.secrets.kv.v2.read_secret_version(path=full_path)["data"]["data"]
+                    os.environ.update(secret_data)
+        except hvac.exceptions.InvalidPath:
+            # Si el path no es una carpeta KV válida, lo ignoramos
             pass
 
-        # 4. Parches comunes
-        fixed = json_str
-        fixed = fixed.replace("'", '"')         # comillas simples → dobles
-        fixed = fixed.replace("None", "null")   # None → null
-        fixed = fixed.replace("True", "true")   # True → true
-        fixed = fixed.replace("False", "false") # False → false
-        fixed = fixed.replace("\\n", " ")       # eliminar saltos literales
-        fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # eliminar comas colgantes
+    if vault_addr and vault_token:
+        try:
+            client = hvac.Client(url=vault_addr, token=vault_token)
+            if client.is_authenticated():
+                print("✅ Vault conectado correctamente")
+                load_all_secrets(client, vault_path)
+                return
+            else:
+                print("⚠️ Token inválido, usando .env local")
+        except Exception as e:
+            print(f"⚠️ Error accediendo a Vault: {e}")
 
-        # 5. Escapar comillas internas dentro de strings
-        def escape_strings(s):
-            result = []
-            i = 0
-            while i < len(s):
-                if s[i] == '"':  # inicio de string
-                    try:
-                        val, end = scanstring(s, i + 1)
-                        # escapamos comillas internas en el valor
-                        safe_val = val.replace('"', '\\"')
-                        result.append(f'"{safe_val}"')
-                        i = end + 1
-                    except Exception:
-                        result.append(s[i])
-                        i += 1
-                else:
+    print("💡 Usando variables locales del .env")
+    load_dotenv(
+        dotenv_path=Path(env_path),
+        override=True
+    )
+
+
+def extraer_json_del_texto(texto: str) -> dict:
+    """
+    Extrae y arregla un bloque JSON de un texto que puede venir malformado,
+    con backticks, comillas simples, comas colgantes, etc.
+    """
+
+    # 1. Buscar bloque con ```json ... ```
+    match = re.search(r"```json\s*(\{.*?\})\s*```", texto, re.DOTALL)
+    if not match:
+        match = re.search(r"(\{.*\})", texto, re.DOTALL)
+
+    if not match:
+        raise ValueError("No se encontró bloque JSON en el texto")
+
+    json_str = match.group(1).strip()
+
+    # 2. Limpiar ```json ... ``` o ```
+    if json_str.startswith("```json"):
+        json_str = json_str[len("```json"):].strip()
+    elif json_str.startswith("```"):
+        json_str = json_str[len("```"):].strip()
+    if json_str.endswith("```"):
+        json_str = json_str[:-len("```")].strip()
+
+    # 3. Intentar parsear directo
+    try:
+        return json.loads(json_str)
+    except Exception:
+        pass
+
+    # 4. Parches comunes
+    fixed = json_str
+    fixed = fixed.replace("'", '"')         # comillas simples → dobles
+    fixed = fixed.replace("None", "null")   # None → null
+    fixed = fixed.replace("True", "true")   # True → true
+    fixed = fixed.replace("False", "false") # False → false
+    fixed = fixed.replace("\\n", " ")       # eliminar saltos literales
+    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # eliminar comas colgantes
+
+    # 5. Escapar comillas internas dentro de strings
+    def escape_strings(s):
+        result = []
+        i = 0
+        while i < len(s):
+            if s[i] == '"':  # inicio de string
+                try:
+                    val, end = scanstring(s, i + 1)
+                    # escapamos comillas internas en el valor
+                    safe_val = val.replace('"', '\\"')
+                    result.append(f'"{safe_val}"')
+                    i = end + 1
+                except Exception:
                     result.append(s[i])
                     i += 1
-            return ''.join(result)
+            else:
+                result.append(s[i])
+                i += 1
+        return ''.join(result)
 
-        fixed = escape_strings(fixed)
+    fixed = escape_strings(fixed)
 
-        # 6. Intentar parsear con JSON estándar
-        try:
-            return json.loads(fixed)
-        except Exception:
-            pass
+    # 6. Intentar parsear con JSON estándar
+    try:
+        return json.loads(fixed)
+    except Exception:
+        pass
 
-        # 7. Probar con json5 si está disponible
-        try:
-            import json5
-            return json5.loads(fixed)
-        except Exception:
-            pass
+    # 7. Probar con json5 si está disponible
+    try:
+        import json5
+        return json5.loads(fixed)
+    except Exception:
+        pass
 
-        # 8. Último recurso: ast.literal_eval
-        try:
-            data = ast.literal_eval(fixed)
-        except Exception as e:
-            raise ValueError(f"No se pudo reparar el JSON: {e}\nTexto:\n{fixed}")
+    # 8. Último recurso: ast.literal_eval
+    try:
+        data = ast.literal_eval(fixed)
+    except Exception as e:
+        raise ValueError(f"No se pudo reparar el JSON: {e}\nTexto:\n{fixed}")
 
 
-        # ✅ 9. Reparar JSONs anidados en strings (como "interpretacion")
-        for k, v in list(data.items()):
-            if isinstance(v, str):
-                v_str = v.strip()
-                if v_str.startswith("{") and v_str.endswith("}"):
-                    try:
-                        data[k] = json.loads(v_str)
-                    except Exception:
-                        pass  # si no parsea, lo dejamos como está
+    # ✅ 9. Reparar JSONs anidados en strings (como "interpretacion")
+    for k, v in list(data.items()):
+        if isinstance(v, str):
+            v_str = v.strip()
+            if v_str.startswith("{") and v_str.endswith("}"):
+                try:
+                    data[k] = json.loads(v_str)
+                except Exception:
+                    pass  # si no parsea, lo dejamos como está
 
-        return data
-
+    return data
 
 
 def cargar_config(ruta_config: str | Path, cargar_clases: bool = True) -> dict:
