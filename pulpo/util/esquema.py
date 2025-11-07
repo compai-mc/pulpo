@@ -134,8 +134,8 @@ class CompaiMessage(BaseModel):
     history: Optional[Dict[str, Any]] = Field(
         default=None, description="Historia de la conversacion o interacciones previas relacionadas con el mensaje."
     )
-    story: Optional[Dict[str, Any]] = Field(
-        default=None, description="Contexto narrativo o historia generada en torno al mensaje."
+    story: Optional[List[Dict[str, str]]] = Field(
+        default_factory=list, description="Contexto narrativo o historia generada en torno al mensaje."
     )
 
 
