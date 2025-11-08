@@ -103,6 +103,8 @@ class MinioPromptStore:
 
         object_name = f"{namespace}/{environment}/{pv_name}/{prompt_name}.json"
 
+        print(f"🗂️ Guardando prompt en MinIO con metadata: {object_name}")
+
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         data_stream = io.BytesIO(data)
 
