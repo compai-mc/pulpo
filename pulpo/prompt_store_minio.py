@@ -21,11 +21,11 @@ __all__ = [
     "download_llm_prompts",
 ]
 
-MINIO_URL = require_env("PROMPTS_MINIO_URL")
-MINIO_ACCESS_KEY = require_env("PROMPTS_MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = require_env("PROMPTS_MINIO_SECRET_KEY")
+MINIO_URL = require_env("MINIO_URL")
+MINIO_ACCESS_KEY = require_env("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = require_env("MINIO_SECRET_KEY")
 MINIO_PROMPTS_BUCKET = require_env("MINIO_PROMPTS_BUCKET")
-PROMPTS_MINIO_SECURE = require_env("PROMPTS_MINIO_SECURE")
+MINIO_PROMPTS_SECURE = require_env("MINIO_PROMPTS_SECURE")
 
 class MinioPromptStore:
     """Almacena y recupera prompts LLM desde MinIO."""
@@ -47,7 +47,7 @@ class MinioPromptStore:
             )
             return None
 
-        secure = PROMPTS_MINIO_SECURE.strip().lower() in {
+        secure = MINIO_PROMPTS_SECURE.strip().lower() in {
             "1",
             "true",
             "yes",
