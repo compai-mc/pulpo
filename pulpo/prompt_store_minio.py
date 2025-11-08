@@ -238,7 +238,7 @@ if __name__ == "__main__":
             print(" -", name)
 
         print("\n📥 Descargando el prompt guardado:")
-        data = store.get(object_name)
+        data = store.get("compai/desarrollo/Chatbot/nombreprompt.json")
         if data:
             print(json.dumps(data, indent=4, ensure_ascii=False))
         else:
