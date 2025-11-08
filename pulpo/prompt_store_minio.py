@@ -75,14 +75,9 @@ class MinioPromptStore:
     def store(
         self,
         *,
-        agent_name: str,
         prompt: str,
-        persona_name: Optional[str] = None,
-        persona_id: Optional[str] = None,
-        original_message: Optional[str] = None,
         prompt_template: Optional[str] = None,
         model: Optional[str] = None,
-        temperature: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """Guarda un prompt en MinIO y devuelve el nombre del objeto."""
@@ -92,30 +87,21 @@ class MinioPromptStore:
         timestamp = datetime.now(timezone.utc)
         payload: Dict[str, Any] = {
             "timestamp": timestamp.isoformat(),
-            "agent_name": agent_name,
-            "persona_name": persona_name,
-            "persona_id": persona_id,
             "prompt": prompt,
-            "original_message": original_message,
             "prompt_template": prompt_template,
             "model": model,
-            "temperature": temperature,
         }
         if metadata:
             payload["metadata"] = metadata
 
         metadata = metadata.copy() if metadata else {}
 
-        job_id = metadata.get("job_id")
-        environment = metadata.get("environment") or os.getenv("ENVIRONMENT") or "dev"
-        namespace = metadata.get("namespace") or os.getenv("NAMESPACE") or "compai"
+        environment = metadata.get("environment") or "dev"
+        namespace = metadata.get("namespace") or "compai"
+        pv_name = metadata.get("pv_name") or "default"
+        prompt_name = metadata.get("prompt_name") or "prompt"
 
-        job_segment = "no-job"
-        if job_id:
-            job_segment = str(job_id).replace("/", "_").strip() or job_segment
-
-        agent_segment = agent_name.replace(" ", "_").lower() or "agent"
-        object_name = f"{namespace}/{environment}/{job_segment}-{agent_segment}-{timestamp:%Y%m%d%H%M%S%f}.json"
+        object_name = f"{namespace}/{environment}/{pv_name}/{prompt_name}.json"
 
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         data_stream = io.BytesIO(data)
@@ -232,14 +218,15 @@ if __name__ == "__main__":
 
         print("➡️ Guardando un prompt de prueba...")
         object_name = store.store(
-            agent_name="AsistentePrueba",
             prompt="¿Quién fue Pericles?",
-            persona_name="Historiador",
             model="gpt-5",
-            temperature=0.7,
-            metadata={"job_id": "test123", "environment": "dev"},
+            metadata={
+                "environment": "dev",
+                "namespace": "compai",
+                "pv_name": "operaciones",
+                "prompt_name": "clasificador"
+            },
         )
-
         if object_name:
             print(f"✅ Prompt guardado con nombre: {object_name}")
         else:
