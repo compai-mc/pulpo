@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, Optional
 from minio import Minio
 from minio.error import S3Error
 
-from .logueador import log
+from pulpo.logueador import log
 
 __all__ = [
     "MinioPromptStore",
@@ -19,7 +19,6 @@ __all__ = [
     "download_llm_prompt",
     "download_llm_prompts",
 ]
-
 
 class MinioPromptStore:
     """Almacena y recupera prompts LLM desde MinIO."""
@@ -210,3 +209,53 @@ def download_llm_prompt(object_name: str) -> Optional[Dict[str, Any]]:
 def download_llm_prompts(prefix: str) -> Dict[str, Dict[str, Any]]:
     """Recupera todos los prompts bajo un prefijo dado (p.ej. 'compai/dev')."""
     return _get_store().download_many(prefix)
+
+
+
+
+# ---------------------------------------------------------------------- #
+# Bloque de pruebas
+# ---------------------------------------------------------------------- #
+
+if __name__ == "__main__":
+    print("\n=== 🧪 PRUEBA DE MinioPromptStore ===\n")
+
+    # Configuración mínima (puedes cambiarla)
+    os.environ["PROMPTS_MINIO_URL"] = "alcazar:19000"
+    os.environ["PROMPTS_MINIO_ACCESS_KEY"] = "minioadmin"
+    os.environ["PROMPTS_MINIO_SECRET_KEY"] = "minioadmin"
+    os.environ["PROMPTS_MINIO_SECURE"] = "false"
+    os.environ["MINIO_PROMPTS_BUCKET"] = "llm-prompts"
+
+    try:
+        store = MinioPromptStore()
+
+        print("➡️ Guardando un prompt de prueba...")
+        object_name = store.store(
+            agent_name="AsistentePrueba",
+            prompt="¿Quién fue Pericles?",
+            persona_name="Historiador",
+            model="gpt-5",
+            temperature=0.7,
+            metadata={"job_id": "test123", "environment": "dev"},
+        )
+
+        if object_name:
+            print(f"✅ Prompt guardado con nombre: {object_name}")
+        else:
+            print("❌ Error al guardar el prompt.")
+            exit(1)
+
+        print("\n📋 Listando objetos:")
+        for name in store.list(prefix="compai/dev"):
+            print(" -", name)
+
+        print("\n📥 Descargando el prompt guardado:")
+        data = store.get(object_name)
+        if data:
+            print(json.dumps(data, indent=4, ensure_ascii=False))
+        else:
+            print("⚠️ No se pudo recuperar el objeto.")
+
+    except Exception as e:
+        print("⚠️ Error en la prueba:", e)
