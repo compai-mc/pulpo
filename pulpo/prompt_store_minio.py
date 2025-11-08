@@ -162,6 +162,43 @@ class MinioPromptStore:
             if data is not None:
                 results[name] = data
         return results
+    
+        
+    def delete(self, object_name: str) -> bool:
+        """Elimina un prompt concreto de MinIO."""
+        if not self._client:
+            return False
+        try:
+            self._client.remove_object(self._bucket, object_name)
+            log.debug("🗑️ Eliminado prompt de MinIO: %s", object_name)
+            return True
+        except S3Error as exc:
+            if exc.code == "NoSuchKey":
+                log.warning("⚠️ El objeto '%s' no existe en el bucket '%s'.", object_name, self._bucket)
+                return False
+            log.error("❌ Error S3 al eliminar '%s': %s", object_name, exc)
+        except Exception as exc:  # noqa: BLE001
+            log.error("❌ Error inesperado al eliminar '%s': %s", object_name, exc)
+        return False
+
+    def delete_many(self, prefix: Optional[str] = None) -> int:
+        """
+        Elimina todos los prompts bajo un prefijo dado (p.ej. 'compai/dev/operaciones/').
+        Devuelve el número de objetos eliminados.
+        """
+        if not self._client:
+            return 0
+        count = 0
+        try:
+            objects = list(self._client.list_objects(self._bucket, prefix=prefix or "", recursive=True))
+            for obj in objects:
+                self._client.remove_object(self._bucket, obj.object_name)
+                count += 1
+            log.debug("🧹 Eliminados %d objetos bajo prefijo '%s'", count, prefix or "")
+        except Exception as exc:
+            log.error("❌ Error eliminando objetos bajo '%s': %s", prefix, exc)
+        return count
+
 
 
 # ---------------------------------------------------------------------- #
@@ -195,6 +232,15 @@ def download_llm_prompt(object_name: str) -> Optional[Dict[str, Any]]:
 def download_llm_prompts(prefix: str) -> Dict[str, Dict[str, Any]]:
     """Recupera todos los prompts bajo un prefijo dado (p.ej. 'compai/dev')."""
     return _get_store().download_many(prefix)
+
+def delete_llm_prompt(object_name: str) -> bool:
+    """Elimina un prompt específico del bucket."""
+    return _get_store().delete(object_name)
+
+
+def delete_all_llm_prompts(prefix: Optional[str] = None) -> int:
+    """Elimina todos los prompts bajo un prefijo (p.ej. 'compai/dev/')."""
+    return _get_store().delete_many(prefix)
 
 
 
@@ -246,3 +292,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         print("⚠️ Error en la prueba:", e)
+
+        
