@@ -10,6 +10,7 @@ from minio import Minio
 from minio.error import S3Error
 
 from pulpo.logueador import log
+from pulpo.util.util import require_env
 
 __all__ = [
     "MinioPromptStore",
@@ -20,19 +21,25 @@ __all__ = [
     "download_llm_prompts",
 ]
 
+MINIO_URL = require_env("PROMPTS_MINIO_URL")
+MINIO_ACCESS_KEY = require_env("PROMPTS_MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = require_env("PROMPTS_MINIO_SECRET_KEY")
+MINIO_PROMPTS_BUCKET = require_env("MINIO_PROMPTS_BUCKET")
+PROMPTS_MINIO_SECURE = require_env("PROMPTS_MINIO_SECURE")
+
 class MinioPromptStore:
     """Almacena y recupera prompts LLM desde MinIO."""
 
     def __init__(self, *, bucket: Optional[str] = None) -> None:
-        self._bucket = bucket or os.getenv("MINIO_PROMPTS_BUCKET", "llm-prompts")
+        self._bucket = MINIO_PROMPTS_BUCKET
         self._client = self._build_client()
         if self._client:
             self._ensure_bucket()
 
     def _build_client(self) -> Optional[Minio]:
-        url = os.getenv("PROMPTS_MINIO_URL") or os.getenv("MINIO_URL")
-        access_key = os.getenv("PROMPTS_MINIO_ACCESS_KEY") or os.getenv("ACCESS_KEY")
-        secret_key = os.getenv("PROMPTS_MINIO_SECRET_KEY") or os.getenv("SECRET_KEY")
+        url = MINIO_URL
+        access_key = MINIO_ACCESS_KEY
+        secret_key = MINIO_SECRET_KEY
 
         if not url or not access_key or not secret_key:
             log.debug(
@@ -40,7 +47,7 @@ class MinioPromptStore:
             )
             return None
 
-        secure = os.getenv("PROMPTS_MINIO_SECURE", "false").strip().lower() in {
+        secure = PROMPTS_MINIO_SECURE.strip().lower() in {
             "1",
             "true",
             "yes",
@@ -107,6 +114,8 @@ class MinioPromptStore:
 
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         data_stream = io.BytesIO(data)
+
+        print(f"🗂️ Guardando datastream: {data_stream}")
 
         try:
             self._ensure_bucket()
