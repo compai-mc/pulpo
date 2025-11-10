@@ -62,11 +62,20 @@ def load_env(
     )
 
 
-def extraer_json_del_texto(texto: str) -> dict:
+def extraer_json_del_texto(texto) -> dict:
     """
     Extrae y arregla un bloque JSON de un texto que puede venir malformado,
     con backticks, comillas simples, comas colgantes, etc.
+    Si el argumento ya es un dict, se devuelve tal cual.
     """
+
+    # 🧩 0. Si ya es un dict o lista, devolver directamente
+    if isinstance(texto, (dict, list)):
+        return texto
+
+    # 🧩 1. Si no es str, convertir a str
+    if not isinstance(texto, str):
+        return {"raw": str(texto)}
 
     # 1. Buscar bloque con ```json ... ```
     match = re.search(r"```json\s*(\{.*?\})\s*```", texto, re.DOTALL)
@@ -94,12 +103,12 @@ def extraer_json_del_texto(texto: str) -> dict:
 
     # 4. Parches comunes
     fixed = json_str
-    fixed = fixed.replace("'", '"')         # comillas simples → dobles
-    fixed = fixed.replace("None", "null")   # None → null
-    fixed = fixed.replace("True", "true")   # True → true
-    fixed = fixed.replace("False", "false") # False → false
-    fixed = fixed.replace("\\n", " ")       # eliminar saltos literales
-    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)  # eliminar comas colgantes
+    fixed = fixed.replace("'", '"')
+    fixed = fixed.replace("None", "null")
+    fixed = fixed.replace("True", "true")
+    fixed = fixed.replace("False", "false")
+    fixed = fixed.replace("\\n", " ")
+    fixed = re.sub(r",\s*([}\]])", r"\1", fixed)
 
     # 5. Escapar comillas internas dentro de strings
     def escape_strings(s):
@@ -109,7 +118,6 @@ def extraer_json_del_texto(texto: str) -> dict:
             if s[i] == '"':  # inicio de string
                 try:
                     val, end = scanstring(s, i + 1)
-                    # escapamos comillas internas en el valor
                     safe_val = val.replace('"', '\\"')
                     result.append(f'"{safe_val}"')
                     i = end + 1
@@ -139,21 +147,22 @@ def extraer_json_del_texto(texto: str) -> dict:
     # 8. Último recurso: ast.literal_eval
     try:
         data = ast.literal_eval(fixed)
-    except Exception as e:
+    except Exception:
         return {"raw": texto.strip()}
 
-
     # ✅ 9. Reparar JSONs anidados en strings (como "interpretacion")
-    for k, v in list(data.items()):
-        if isinstance(v, str):
-            v_str = v.strip()
-            if v_str.startswith("{") and v_str.endswith("}"):
-                try:
-                    data[k] = json.loads(v_str)
-                except Exception:
-                    pass  # si no parsea, lo dejamos como está
+    if isinstance(data, dict):
+        for k, v in list(data.items()):
+            if isinstance(v, str):
+                v_str = v.strip()
+                if v_str.startswith("{") and v_str.endswith("}"):
+                    try:
+                        data[k] = json.loads(v_str)
+                    except Exception:
+                        pass  # si no parsea, lo dejamos como está
 
     return data
+
 
 
 def cargar_config(ruta_config: str | Path, cargar_clases: bool = True) -> dict:
