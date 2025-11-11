@@ -283,26 +283,6 @@ class GestorTareas:
         msg_with_origin = {**msg, "origin": self.instance_id}
         self.producer.publish(TOPIC_TASK, msg_with_origin)
 
-    def _on_kafka_message2(self, message, *args, **kwargs):
-        """Procesa mensajes de Kafka sobre tareas completadas."""
-        try:
-            data = json.loads(message.value.decode("utf-8"))
-            job_id = data.get("job_id")
-            task_id = data.get("task_id")
-
-            log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
-
-            # Ignorar mensajes creados por esta misma instancia
-            origin = data.get("origin") or data.get("_origin")
-            if origin == getattr(self, "instance_id", None):
-                log.debug(f"[GestorTareas] Ignorando mensaje propio (origin={origin})")
-                return
-
-            if job_id and task_id:
-                self.task_completed(job_id, task_id)
-        except Exception as e:
-            log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
-
     def _on_kafka_message(self, message, *args, **kwargs):
         """Procesa mensajes de Kafka sobre tareas completadas."""
         try:
@@ -343,16 +323,16 @@ class GestorTareas:
             self.collection.update(job)
             log.info(f"[GestorTareas] ✔ Tarea '{task_id}' completada en job '{job_id}'")
 
-            """self.producer.publish(
+            self.producer.publish(
                 TOPIC_END_TASK,
                 {"job_id": job_id, "task_id": task_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
-            )"""
+            )
 
             if all(t["completed"] for t in job["tasks"].values()):
-                """self.producer.publish(
+                self.producer.publish(
                     TOPIC_END_JOB,
                     {"job_id": job_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
-                )"""
+                )
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
                 if self.on_complete_callback:
