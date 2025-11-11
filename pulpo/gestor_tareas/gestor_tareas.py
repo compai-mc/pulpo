@@ -4,17 +4,23 @@ import os
 import sys
 from pathlib import Path
 from arango import ArangoClient
-
 from pulpo.logueador import log
 
 # Añadir el directorio raíz del proyecto al path de Python
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-# Importar el productor y consumidor
+from pulpo.util.util import require_env
+
+import config
+
+KAFKA_BROKER= require_env("KAFKA_BROKER")
+
+# Importar productor, consumidor y utilidades
 from pulpo.publicador.publicador import KafkaEventPublisher
 from pulpo.consumidor.consumidor import KafkaEventConsumer
-from pulpo.util.util import require_env
+
+
 # ========================================================
 # 🔧 Configuración
 # ========================================================
@@ -23,17 +29,14 @@ ARANGO_DB_COMPAI = require_env("ARANGO_DB_COMPAI")
 ARANGO_USER = require_env("ARANGO_USER")
 ARANGO_PASSWORD = require_env("ARANGO_PASSWORD")
 ARANGO_COLLECTION = require_env("ARANGO_COLLECTION_TAREAS")
+TOPIC_TASK_EVENTS = require_env("TOPIC_TASK_EVENTS")
 
-TOPIC_TASK = require_env("TOPIC_TASK")
-TOPIC_END_TASK = require_env("TOPIC_END_TASK")
-TOPIC_END_JOB = require_env("TOPIC_END_JOB")
-TOPIC_END_JOBS = require_env("TOPIC_END_JOBS")
 
 # ========================================================
 # 🧠 Clase principal: GestorTareas
 # ========================================================
 class GestorTareas:
-    """Gestor centralizado de tareas y jobs, con soporte Singleton."""
+    """Gestor centralizado de tareas y jobs usando un único tópico Kafka."""
 
     _instance = None
 
@@ -45,8 +48,6 @@ class GestorTareas:
 
     def __init__(
         self,
-        topic_finalizacion_tareas: str = TOPIC_END_TASK,
-        topic_finalizacion_global: str = TOPIC_END_JOB,
         on_complete_callback=None,
         on_all_complete_callback=None,
         on_task_complete_callback=None,
@@ -77,28 +78,19 @@ class GestorTareas:
         self.on_all_complete_callback = on_all_complete_callback
         self.on_task_complete_callback = on_task_complete_callback
 
-        # --- Kafka Producer ---
+        # --- Kafka Producer y Consumer ---
         self.producer = KafkaEventPublisher()
         self.producer_started = False
 
-        # --- Kafka Consumer (si hay callbacks) ---
-        self.consumer = None
-        if any([on_complete_callback, on_all_complete_callback, on_task_complete_callback]):
-            self.consumer = KafkaEventConsumer(
-                topic=topic_finalizacion_tareas,
-                callback=self._on_kafka_message,
-                group_id=group_id,
-            )
-            log.info(f"[GestorTareas] Consumer configurado para topic: {topic_finalizacion_tareas}")
-        else:
-            log.info("[GestorTareas] Sin callbacks configurados, consumer no creado")
+        self.consumer = KafkaEventConsumer(
+            topic=TOPIC_TASK_EVENTS,
+            callback=self._on_kafka_message,
+            group_id=group_id,
+        )
+        log.info(f"[GestorTareas] Consumer configurado para topic: {TOPIC_TASK_EVENTS}")
 
-        # Identificador único de esta instancia para evitar procesar mensajes que esta misma
-        # instancia publica (evita bucles cuando publicamos en los mismos topics que escuchamos).
-        try:
-            self.instance_id = str(uuid.uuid4())
-        except Exception:
-            self.instance_id = "gestor_tareas_local"
+        # ID de instancia (para evitar procesar mensajes propios)
+        self.instance_id = str(uuid.uuid4())
 
         self._initialized = True
         log.info("[GestorTareas] Instancia única creada correctamente")
@@ -107,14 +99,14 @@ class GestorTareas:
     # 🚀 Ciclo de vida
     # ========================================================
     def start(self):
-        """Inicia el productor y el consumidor (si lo hay)."""
+        """Inicia productor y consumidor."""
         try:
             if not self.producer_started:
                 self.producer.start()
                 self.producer_started = True
                 log.info("[GestorTareas] Producer iniciado")
 
-            if self.consumer and not getattr(self.consumer, "_running", False):
+            if not getattr(self.consumer, "_running", False):
                 self.consumer.start()
                 log.info("[GestorTareas] Consumer iniciado")
         except Exception as e:
@@ -142,9 +134,10 @@ class GestorTareas:
     # 📦 Gestión de Jobs
     # ========================================================
     def add_job(self, tasks: list[dict], job_id: str = None):
-        """Añade tareas a un job (nuevo o existente) y publica mensajes de inicio."""
+        """Añade tareas a un job y publica eventos start_task."""
         if not tasks:
             log.debug("[GestorTareas] Intento de crear un job sin tareas")
+            return None
 
         job_id = job_id or str(uuid.uuid4())
         nuevas_tareas = []
@@ -186,13 +179,14 @@ class GestorTareas:
             log.error(f"[GestorTareas] Error creando job '{job_id}': {e}")
             return None
 
-        # Publicar las tareas
+        # Publicar inicio de cada tarea
         for task in nuevas_tareas:
-            msg = {"job_id": job_id, "task_id": task["task_id"], "action": "start_task"}
-            self._publicar_tarea(msg)
+            msg = {"job_id": job_id, "task_id": task["task_id"]}
+            self._publicar_evento("start_task", msg)
 
         return job_id
     
+
     def get_job(self, job_id: str) -> dict | None:
         """
         Recupera el documento completo en ArangoDB correspondiente a un job_id.
@@ -214,7 +208,6 @@ class GestorTareas:
         except Exception as e:
             log.error(f"[GestorTareas] Error recuperando job '{job_id}': {e}")
             return None
-
 
     def update_task(self, job_id: str, task_id: str, updates: dict):
         job = self.collection.get(job_id)
@@ -272,45 +265,88 @@ class GestorTareas:
         return True
 
     # ========================================================
-    # 📬 Publicación y eventos
+    # 📬 Publicación y recepción de eventos
     # ========================================================
-    def _publicar_tarea(self, msg: dict):
-        """Publica una tarea asegurando que el productor esté activo."""
+    def _publicar_evento(self, event_type: str, data: dict):
+        """Publica un evento genérico en el tópico único."""
         if not self.producer_started:
             log.warning("[GestorTareas] Producer no iniciado, arrancando automáticamente...")
             self.start()
-        # Marcar el origen del mensaje para que el consumidor local pueda ignorarlo si se recibe
-        msg_with_origin = {**msg, "origin": self.instance_id}
-        self.producer.publish(TOPIC_TASK, msg_with_origin)
 
-    def _on_kafka_message(self, message, *args, **kwargs):
-        """Procesa mensajes de Kafka sobre tareas completadas."""
+        msg = {
+            "event_type": event_type,
+            **data,
+            "origin": self.instance_id,
+        }
+        self.producer.publish(TOPIC_TASK_EVENTS, msg)
+        log.debug(f"[GestorTareas] Evento publicado: {event_type} ({data})")
+
+    def _on_kafka_message2(self, message, *args, **kwargs):
+        """Procesa mensajes de Kafka."""
         try:
-            # Si el mensaje es un objeto Kafka (tiene .value)
-            if hasattr(message, "value"):
-                data = json.loads(message.value.decode("utf-8"))
-            else:
-                # Si ya es un dict o string
-                data = message if isinstance(message, dict) else json.loads(message)
+            data = json.loads(message.value.decode("utf-8"))
+            event_type = data.get("event_type")
+            origin = data.get("origin")
+
+            if origin == self.instance_id:
+                return  # Ignora mensajes propios
 
             job_id = data.get("job_id")
             task_id = data.get("task_id")
 
-            log.info(f"[GestorTareas] [Kafka] Mensaje recibido: {data}")
+            log.info(f"[Kafka] Evento recibido: {event_type} job={job_id}, task={task_id}")
 
-            # Ignorar mensajes creados por esta misma instancia para evitar reentrada
-            origin = data.get("origin") or data.get("_origin")
-            if origin == getattr(self, "instance_id", None):
-                log.debug(f"[GestorTareas] Ignorando mensaje propio (origin={origin})")
-                return
-
-            if job_id and task_id:
+            if event_type == "end_task":
                 self.task_completed(job_id, task_id)
+            elif event_type == "end_job" and self.on_complete_callback:
+                self.on_complete_callback(job_id)
+            elif event_type == "all_jobs_complete" and self.on_all_complete_callback:
+                self.on_all_complete_callback()
 
         except Exception as e:
             log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
 
 
+
+    def _on_kafka_message(self, message, *args, **kwargs):
+        """Procesa mensajes de Kafka."""
+        try:
+            # 🧩 Compatibilidad con mensajes tipo dict o Kafka RawMessage
+            if isinstance(message, dict):
+                data = message
+            elif hasattr(message, "value"):
+                data = json.loads(message.value.decode("utf-8"))
+            else:
+                log.warning(f"[GestorTareas] Formato de mensaje desconocido: {type(message)}")
+                return
+
+            event_type = data.get("event_type")
+            origin = data.get("origin")
+
+            # Ignorar mensajes producidos por esta misma instancia
+            if origin == self.instance_id:
+                return  
+
+            job_id = data.get("job_id")
+            task_id = data.get("task_id")
+
+            log.info(f"[Kafka] Evento recibido: {event_type} job={job_id}, task={task_id}")
+
+            # 🚦 Manejo de tipos de evento
+            if event_type == "end_task":
+                self.task_completed(job_id, task_id)
+            elif event_type == "end_job" and self.on_complete_callback:
+                self.on_complete_callback(job_id)
+            elif event_type == "all_jobs_complete" and self.on_all_complete_callback:
+                self.on_all_complete_callback()
+
+        except Exception as e:
+            log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
+
+
+    # ========================================================
+    # 🧩 Lógica de finalización
+    # ========================================================
     def task_completed(self, job_id: str, task_id: str):
         """Marca una tarea como completada y publica los eventos asociados."""
         try:
@@ -323,34 +359,17 @@ class GestorTareas:
             self.collection.update(job)
             log.info(f"[GestorTareas] ✔ Tarea '{task_id}' completada en job '{job_id}'")
 
-            self.producer.publish(
-                TOPIC_END_TASK,
-                {"job_id": job_id, "task_id": task_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
-            )
+            # Callback por tarea
+            if self.on_task_complete_callback:
+                self.on_task_complete_callback(job_id, task_id)
 
+            # ¿Está todo completado?
             if all(t["completed"] for t in job["tasks"].values()):
-                self.producer.publish(
-                    TOPIC_END_JOB,
-                    {"job_id": job_id, "status": "completed", "uuid": str(uuid.uuid4()), "origin": self.instance_id},
-                )
+                self._publicar_evento("end_job", {"job_id": job_id})
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
-                if self.on_complete_callback:
-                    try:
-                        resultado = self.on_complete_callback(job_id)
-
-                        if resultado:
-                            try:
-                                """self.consumer.commit()"""
-                                log.debug(f"[GestorTareas] ✅ Commit realizado tras callback para job '{job_id}'")
-                            except Exception as commit_error:
-                                log.error(f"[GestorTareas] ⚠️ Error al hacer commit para job '{job_id}': {commit_error}")
-                        else:
-                            log.warning(f"[GestorTareas] ❌ Callback devolvió False, no se hace commit para job '{job_id}'")
-
-                    except Exception as callback_error:
-                        log.error(f"[GestorTareas] ❗ Error durante el callback de job '{job_id}': {callback_error}")
-
+                #if self.on_complete_callback:
+                    #self.on_complete_callback(job_id)
 
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
@@ -370,6 +389,7 @@ def on_all_jobs_complete():
 
 
 if __name__ == "__main__":
+
     gestor = GestorTareas(
         on_complete_callback=on_job_complete,
         on_all_complete_callback=on_all_jobs_complete,
