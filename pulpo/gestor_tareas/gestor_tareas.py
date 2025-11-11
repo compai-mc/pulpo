@@ -14,8 +14,6 @@ from pulpo.util.util import require_env
 
 import config
 
-KAFKA_BROKER= require_env("KAFKA_BROKER")
-
 # Importar productor, consumidor y utilidades
 from pulpo.publicador.publicador import KafkaEventPublisher
 from pulpo.consumidor.consumidor import KafkaEventConsumer
