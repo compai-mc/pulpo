@@ -66,7 +66,7 @@ class ForecastTool(lr.agent.ToolMessage):
                 "fecha": fecha,
                 "respuesta": "Te envio una tarea al workflow con el documento solicitado.",
                 "mode": "workflow",
-                "status": "completado",
+                "status": "hecho_forecast",
                 "reejecutar": False 
             }
         )
@@ -367,7 +367,7 @@ class EnviarCorreoTool(ToolMessage):
                 "respuesta": resultado,
                 "mensaje": "Correo enviado correctamente.",
                 "mode": "online",
-                "status": "completado",
+                "status": "hecho_correo",
                 "reejecutar": False
             }
         )
@@ -467,7 +467,7 @@ class EnviarPropuestaTool(ToolMessage):
                 },
                 "mensaje": "✅ Propuesta creada y enviada correctamente.",
                 "mode": "online",
-                "status": "completado",
+                "status": ["hecho_propuesta","hecho_correo"],
                 "reejecutar": False
             }
         )

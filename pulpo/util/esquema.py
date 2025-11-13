@@ -125,12 +125,11 @@ class CompaiMessage(BaseModel):
         default=None, description="Resultados del análisis semántico y emocional del mensaje."
     )
 
-    status: Optional[List[str]] = Field(
-        default=None, description="Lista de estados actuales del mensaje dentro del flujo de procesamiento."
+    status: Optional[Dict[str, str]] = Field(
+        default_factory=dict,
+        description="Diccionario con los estados actuales del mensaje, e.g. {'inbox': 'done', 'interpretado': 'todo'}."
     )
-    action: Optional[List[str]] = Field(
-        default=None, description="Acciones que se deben realizar a este mensaje."
-    )
+
     history: Optional[Dict[str, Any]] = Field(
         default=None, description="Historia de la conversacion o interacciones previas relacionadas con el mensaje."
     )
