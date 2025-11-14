@@ -7,6 +7,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import hvac
+from proxy_config_service import ConfigClient
 
 def require_env(var_name: str) -> str:
     value = os.getenv(var_name)
@@ -20,46 +21,60 @@ def load_env(
         vault_token:str = "root",
         vault_path:str = "des/compai",
         env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env"
-        ):
-    """Carga las variables de entorno desde HashiCorp Vault si es posible,"""
+    ):
+    """Carga variables desde Vault → .env → config-service"""
 
     def load_all_secrets(client, base_path):
         """Carga todas las claves de todos los subdirectorios recursivamente."""
         try:
-            # Intenta listar los subpaths del directorio actual
             response = client.secrets.kv.v2.list_secrets(path=base_path)
             keys = response["data"]["keys"]
 
             for key in keys:
                 full_path = f"{base_path.rstrip('/')}/{key}"
                 if key.endswith("/"):
-                    # Es un subdirectorio: recurse
                     load_all_secrets(client, full_path)
                 else:
-                    # Es una clave: leer sus valores
                     secret_data = client.secrets.kv.v2.read_secret_version(path=full_path)["data"]["data"]
                     os.environ.update(secret_data)
         except hvac.exceptions.InvalidPath:
-            # Si el path no es una carpeta KV válida, lo ignoramos
             pass
 
+    # --- 1. Vault ---
+    vault_loaded = False
     if vault_addr and vault_token:
         try:
             client = hvac.Client(url=vault_addr, token=vault_token)
             if client.is_authenticated():
                 print("✅ Vault conectado correctamente")
                 load_all_secrets(client, vault_path)
-                return
+                vault_loaded = True
             else:
                 print("⚠️ Token inválido, usando .env local")
         except Exception as e:
             print(f"⚠️ Error accediendo a Vault: {e}")
 
-    print("💡 Usando variables locales del .env")
-    load_dotenv(
-        dotenv_path=Path(env_path),
-        override=True
-    )
+    # --- 2. .env local si Vault no funcionó ---
+    if not vault_loaded:
+        print("💡 Usando variables locales del .env")
+        load_dotenv(
+            dotenv_path=Path(env_path),
+            override=True
+        )
+
+    # --- 3. Config-service ---
+    try:
+        config_global = ConfigClient().get_config("compai_global").get("config", {})
+
+        # Añadir al entorno
+        for key, value in config_global.items():
+            os.environ[str(key)] = str(value)
+
+        print("🔧 Config-service cargado correctamente")
+
+    except Exception as e:
+        print(f"⚠️ No se pudo cargar config-service: {e}")
+
 
 
 def extraer_json_del_texto(texto) -> dict:
