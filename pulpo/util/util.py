@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import hvac
-from ..proxy_config_service import ConfigClient
+
 
 def require_env(var_name: str) -> str:
     value = os.getenv(var_name)
@@ -65,6 +65,7 @@ def load_env(
 
     # --- 3. Config-service ---
     try:
+        from ..proxy_config_service import ConfigClient
         config_global = ConfigClient().get_config("compai_global")
         config_global_static = config_global.get("config", {}).get("static", {})
 
