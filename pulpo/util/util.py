@@ -70,7 +70,8 @@ def load_env(
         config_global_static = config_global.get("config", {}).get("static", {})
 
         if config_especifico_id:
-            config_especifico = ConfigClient().get_config(config_especifico_id).get("config", {})
+            resultado = ConfigClient().get_config(config_especifico_id) or {}
+            config_especifico = resultado.get("config", {}) if isinstance(resultado, dict) else {}
         else:
             config_especifico = {}
 
