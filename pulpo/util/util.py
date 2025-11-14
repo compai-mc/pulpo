@@ -66,8 +66,8 @@ def load_env(
     # --- 3. Config-service ---
     try:
         from ..proxy_config_service import ConfigClient
-        config_global = ConfigClient().get_config("compai_global")
-        config_global_static = config_global.get("config", {}).get("static", {})
+        config_global = ConfigClient().get_config("compai_global").get("config", {})
+        config_global_static = config_global.get("static", {})
 
         if config_especifico_id:
             resultado = ConfigClient().get_config(config_especifico_id) or {}
@@ -85,7 +85,6 @@ def load_env(
         print(f"⚠️ No se pudo cargar config-service: {e}")
 
     return { "global": config_global, "especifico": config_especifico }
-
 
 
 def extraer_json_del_texto(texto) -> dict:
