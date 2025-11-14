@@ -64,16 +64,19 @@ def load_env(
 
     # --- 3. Config-service ---
     try:
-        config_global = ConfigClient().get_config("compai_global").get("config", {})
+        config_global = ConfigClient().get_config("compai_global")
+        config_global_static = config_global.get("config", {}).get("static", {})
 
         # Añadir al entorno
-        for key, value in config_global.items():
+        for key, value in config_global_static.items():
             os.environ[str(key)] = str(value)
 
         print("🔧 Config-service cargado correctamente")
 
     except Exception as e:
         print(f"⚠️ No se pudo cargar config-service: {e}")
+
+    return config_global
 
 
 
