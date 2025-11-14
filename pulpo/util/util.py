@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import hvac
-from proxy_config_service import ConfigClient
+from ..proxy_config_service import ConfigClient
 
 def require_env(var_name: str) -> str:
     value = os.getenv(var_name)
@@ -20,7 +20,8 @@ def load_env(
         vault_addr:str = "http://alcazar:8200",
         vault_token:str = "root",
         vault_path:str = "des/compai",
-        env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env"
+        env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env",
+        config_especifico_id: str = ""
     ):
     """Carga variables desde Vault → .env → config-service"""
 
@@ -67,6 +68,11 @@ def load_env(
         config_global = ConfigClient().get_config("compai_global")
         config_global_static = config_global.get("config", {}).get("static", {})
 
+        if config_especifico_id:
+            config_especifico = ConfigClient().get_config(config_especifico_id).get("config", {})
+        else:
+            config_especifico = {}
+
         # Añadir al entorno
         for key, value in config_global_static.items():
             os.environ[str(key)] = str(value)
@@ -76,7 +82,7 @@ def load_env(
     except Exception as e:
         print(f"⚠️ No se pudo cargar config-service: {e}")
 
-    return config_global
+    return { "global": config_global, "especifico": config_especifico }
 
 
 
@@ -183,13 +189,7 @@ def extraer_json_del_texto(texto) -> dict:
 
 
 
-def cargar_config(ruta_config: str | Path, cargar_clases: bool = True) -> dict:
-    ruta = Path(ruta_config)
-    if not ruta.exists():
-        raise FileNotFoundError(f"No se encontró el archivo de configuración: {ruta}")
-
-    with open(ruta, "r", encoding="utf-8") as f:
-        config = json.load(f)
+def cargar_config(config: dict, cargar_clases: bool = True) -> dict:
 
     def _importar_clase(nombre_clase: str):
         modulo, clase = nombre_clase.rsplit(".", 1)
