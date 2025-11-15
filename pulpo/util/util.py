@@ -204,6 +204,10 @@ def cargar_clases_tools(config: dict) -> dict:
 
     def _procesar_nodo(nodo):
         if isinstance(nodo, dict):
+
+            if "classes" in nodo:
+                return config
+
             if "string-classes" in nodo:
                 clases_importadas = []
                 for nombre_clase in nodo["string-classes"]:
