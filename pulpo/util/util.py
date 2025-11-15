@@ -189,8 +189,12 @@ def extraer_json_del_texto(texto) -> dict:
     return data
 
 
-
-def cargar_config(config: dict, cargar_clases: bool = True) -> dict:
+def cargar_clases_tools(config: dict) -> dict:
+    """
+        Carga clases desde cadenas en la configuración bajo la clave "string-classes".
+        Recorre recursivamente el diccionario y busca listas bajo la clave "string-
+        classes", importando las clases y reemplazándolas en la clave "classes".
+    """
 
     def _importar_clase(nombre_clase: str):
         modulo, clase = nombre_clase.rsplit(".", 1)
@@ -215,21 +219,17 @@ def cargar_config(config: dict, cargar_clases: bool = True) -> dict:
         elif isinstance(nodo, list):
             for item in nodo:
                 _procesar_nodo(item)
-
-    # 🔁 Solo procesar si se pidió
-    if cargar_clases:
-        _procesar_nodo(config)
+    
+    _procesar_nodo(config)
 
     return config
 
 
 if __name__ == "__main__":
 
-    cfg = cargar_config("app/config.json")
+    cfg = cargar_clases_tools("app/config.json")
 
     print(cfg["agents"]["agente_herramientas"]["tools"]["classes"])
-
-
 
 
 
