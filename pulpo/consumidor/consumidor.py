@@ -43,6 +43,7 @@ class KafkaEventConsumer:
         self,
         topic: str,
         callback: Callable,
+        session_id: str,
         bootstrap_servers: str = KAFKA_BROKER,
         group_id: Optional[str] = None,
         auto_offset_reset: str = "latest",
@@ -56,9 +57,11 @@ class KafkaEventConsumer:
         heartbeat_interval_ms: int = 10000,
         max_poll_interval_ms: int = 300000,
         pass_raw_message: bool = False,
+        
     ):
         self.topic = topic
         self.callback = callback
+        self.session_id = session_id
         self.bootstrap_servers = bootstrap_servers
         self.group_id = group_id or f"consumer_{topic}_{uuid.uuid4().hex[:8]}"
         self.auto_offset_reset = auto_offset_reset
@@ -319,7 +322,13 @@ class KafkaEventConsumer:
                     for msg in msgs:
                         if not self._running:
                             break
-                        
+                            
+                        # Filtro por session_id
+                        if self.session_id:
+                            data = self._deserialize_message(msg.value)
+                            if isinstance(data, dict) and data.get("session_id") != self.session_id:
+                                continue
+
                         success = self._process_message_with_retry(msg)
                         
                         if success:
