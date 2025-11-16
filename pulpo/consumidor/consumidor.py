@@ -100,6 +100,9 @@ class KafkaEventConsumer:
         self._last_health_check = time.time()
         self._is_healthy = True
 
+        # Flag temporal para saber si el último envío a DLQ fue exitoso
+        self._last_dlq_ok: Optional[bool] = None
+
         callback_type = "mensaje completo" if self.pass_raw_message else "solo datos"
         log.info(
             f"[{self.group_id}] Consumidor inicializado para topic '{self.topic}' "
@@ -178,6 +181,8 @@ class KafkaEventConsumer:
                 else:
                     log.info(f"✅ Mensaje [{msg.partition}:{msg.offset}] procesado correctamente")
                 
+                # limpiar flag de DLQ previa
+                self._last_dlq_ok = None
                 return True
                 
             except Exception as e:
@@ -200,7 +205,14 @@ class KafkaEventConsumer:
                     # Enviar a DLQ si está habilitado
                     if self.enable_dlq:
                         data_for_dlq = data if not self.pass_raw_message else self._deserialize_message(msg.value)
-                        self._send_to_dlq(msg, data_for_dlq, e)
+                        dlq_ok = self._send_to_dlq(msg, data_for_dlq, e)
+                        # registrar resultado para la lógica de commit
+                        self._last_dlq_ok = bool(dlq_ok)
+                        if not dlq_ok:
+                            log.error("❌ El envío a DLQ falló; revisa conectividad del broker o topic de DLQ")
+                    else:
+                        # si DLQ no está habilitado, limpiar flag
+                        self._last_dlq_ok = None
                     
                     return False
         
@@ -234,9 +246,11 @@ class KafkaEventConsumer:
             
             self.metrics["messages_sent_to_dlq"] += 1
             log.warning(f"📮 Mensaje enviado a DLQ: {self.dlq_topic}")
+            return True
             
         except Exception as dlq_error:
             log.error(f"❌ Error enviando a DLQ: {dlq_error}")
+            return False
 
     # ============================================================
     # COMMITS
@@ -311,8 +325,19 @@ class KafkaEventConsumer:
                         if success:
                             self._pending_offsets[tp] = msg.offset
                         else:
-                            if not self.enable_dlq:
-                                self._pending_offsets[tp] = msg.offset
+                            # Siempre marcar offset localmente para control
+                            self._pending_offsets[tp] = msg.offset
+                            # Si usamos DLQ, solo forzar commit inmediato si el envío a DLQ fue exitoso
+                            if self.enable_dlq:
+                                if getattr(self, "_last_dlq_ok", False):
+                                    try:
+                                        self._commit_offsets()
+                                    except Exception as e:
+                                        log.error(f"❌ Error forzando commit tras DLQ: {e}")
+                                else:
+                                    log.error("⚠️ DLQ no disponible o envío fallido; no se avanza offset para permitir reintentos/alerta.")
+                            # limpiar flag temporal
+                            self._last_dlq_ok = None
                         
                         if self._should_commit():
                             self._commit_offsets()
@@ -490,7 +515,7 @@ class KafkaEventConsumer:
                 self._consumer = None
         
         log.info(f"🛑 [{self.group_id}] Consumidor detenido correctamente")
-
+        
     # ============================================================
     # CONTROL DEL CONSUMIDOR
     # ============================================================
