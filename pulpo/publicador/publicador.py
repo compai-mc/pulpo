@@ -88,7 +88,7 @@ class KafkaEventPublisher:
                 self.producer.close()
                 self.producer = None
 
-    def publish(self, topic: str, message: dict, session_id: str = None):
+    def publish(self, topic: str, message: dict, session_id: str):
         """
         Publica un mensaje en un tópico. Si el tópico no existe, lo crea.
         """
@@ -113,7 +113,7 @@ class KafkaEventPublisher:
             log.error(f"❌ Error publicando en tópico '{topic}': {e}", exc_info=True)
 
 
-    def publish_commit(self, topic: str, message: dict, session_id: str = None):
+    def publish_commit(self, topic: str, message: dict, session_id: str):
         if not self.producer:
             raise RuntimeError("El productor no está iniciado.")
 
