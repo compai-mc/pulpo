@@ -46,6 +46,7 @@ class GestorTareas:
 
     def __init__(
         self,
+        session_id: str,
         on_complete_callback=None,
         on_all_complete_callback=None,
         on_task_complete_callback=None,
@@ -54,6 +55,8 @@ class GestorTareas:
         if self._initialized:
             log.warning("[GestorTareas] Ya inicializado, ignorando nueva configuración")
             return
+
+        self.session_id = session_id
 
         # --- Conexión a ArangoDB ---
         try:
@@ -83,6 +86,7 @@ class GestorTareas:
         self.consumer = KafkaEventConsumer(
             topic=TOPIC_TASK_EVENTS,
             callback=self._on_kafka_message,
+            session_id=self.session_id,
             group_id=group_id,
         )
         log.info(f"[GestorTareas] Consumer configurado para topic: {TOPIC_TASK_EVENTS}")
@@ -275,34 +279,8 @@ class GestorTareas:
             **data,
             "origin": self.instance_id,
         }
-        self.producer.publish(TOPIC_TASK_EVENTS, msg)
+        self.producer.publish(TOPIC_TASK_EVENTS, msg, session_id=self.session_id)
         log.debug(f"[GestorTareas] Evento publicado: {event_type} ({data})")
-
-    def _on_kafka_message2(self, message, *args, **kwargs):
-        """Procesa mensajes de Kafka."""
-        try:
-            data = json.loads(message.value.decode("utf-8"))
-            event_type = data.get("event_type")
-            origin = data.get("origin")
-
-            if origin == self.instance_id:
-                return  # Ignora mensajes propios
-
-            job_id = data.get("job_id")
-            task_id = data.get("task_id")
-
-            log.info(f"[Kafka] Evento recibido: {event_type} job={job_id}, task={task_id}")
-
-            if event_type == "end_task":
-                self.task_completed(job_id, task_id)
-            elif event_type == "end_job" and self.on_complete_callback:
-                self.on_complete_callback(job_id)
-            elif event_type == "all_jobs_complete" and self.on_all_complete_callback:
-                self.on_all_complete_callback()
-
-        except Exception as e:
-            log.error(f"[GestorTareas] Error procesando mensaje Kafka: {e}")
-
 
 
     def _on_kafka_message(self, message, *args, **kwargs):
