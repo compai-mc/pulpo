@@ -88,7 +88,7 @@ class KafkaEventPublisher:
                 self.producer.close()
                 self.producer = None
 
-    def publish(self, topic: str, message: dict):
+    def publish(self, topic: str, message: dict, session_id: str = None):
         """
         Publica un mensaje en un tópico. Si el tópico no existe, lo crea.
         """
@@ -98,23 +98,37 @@ class KafkaEventPublisher:
         crear_topico(self.broker, topic)
 
         try:
-            future = self.producer.send(topic, message)
+            future = self.producer.send(
+                topic,
+                key=(session_id.encode() if session_id else None),
+                value=message
+            )
             result = future.get(timeout=10)
-            log.debug(f"📤 Mensaje publicado en '{result.topic}' [part {result.partition}] offset {result.offset}")
+            log.debug(
+                f"📤 Mensaje publicado en '{result.topic}' "
+                f"[part {result.partition}] offset {result.offset} "
+                f"key={session_id}"
+            )
         except Exception as e:
             log.error(f"❌ Error publicando en tópico '{topic}': {e}", exc_info=True)
 
-    def publish_commit(self, topic: str, message: dict):
-        """
-        Simula un envío 'transaccional' (bloqueante + confirmación).
-        """
+
+    def publish_commit(self, topic: str, message: dict, session_id: str = None):
         if not self.producer:
             raise RuntimeError("El productor no está iniciado.")
 
         try:
-            future = self.producer.send(topic, message)
+            future = self.producer.send(
+                topic,
+                key=(session_id.encode() if session_id else None),
+                value=message
+            )
             result = future.get(timeout=10)
-            log.info(f"✅ Mensaje 'transaccional' publicado en '{result.topic}' offset {result.offset}")
+            log.info(
+                f"✅ Mensaje 'transaccional' publicado en '{result.topic}' "
+                f"offset {result.offset} key={session_id}"
+            )
+
         except Exception as e:
             log.error(f"❌ Error en publicación transaccional: {e}", exc_info=True)
 
