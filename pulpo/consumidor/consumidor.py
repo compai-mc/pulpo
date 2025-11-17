@@ -5,8 +5,7 @@ import time
 import uuid
 from typing import Callable, Optional, Dict, Any
 from kafka import KafkaConsumer, TopicPartition, OffsetAndMetadata
-from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError, KafkaConnectionError
-import os
+from kafka.errors import KafkaError, KafkaTimeoutError, CommitFailedError, KafkaConnectionError, RebalanceInProgressError
 from datetime import datetime
 from collections import defaultdict
 from pulpo.util.util import require_env
@@ -278,9 +277,10 @@ class KafkaEventConsumer:
                 for tp, offset in self._pending_offsets.items()
             }
             
-            self._consumer.commit(offsets=offsets)
+            self.safe_commit_offsets(offsets)
             
             log.info(f"💾 Commit exitoso de {len(offsets)} particiones")
+            print(f"💾 Commit exitoso de {len(offsets)} particiones")
             self._pending_offsets.clear()
             self._last_commit_time = time.time()
             
@@ -300,15 +300,25 @@ class KafkaEventConsumer:
         reconnect_attempts = 0
         max_reconnect_attempts = 5
         
+
         while self._running:
             try:
                 # Crear consumidor si no existe o está cerrado
-                if self._consumer is None or getattr(self._consumer, "_closed", False):
-                    log.warning(f"[{self.group_id}] ⚠️ Consumidor no disponible o cerrado, recreando...")
+                if self._consumer is None:
+                    # Esto SOLO ocurre si start() falló antes de crear el consumidor
+                    log.info(f"[{self.group_id}] Creando consumidor inicial...")
+                    print(f"[{self.group_id}] Creando consumidor inicial...")
                     self._consumer = self._create_consumer()
-                    log.info(f"✅ Consumidor conectado al topic '{self.topic}'")
                     reconnect_attempts = 0
+                    continue
 
+                if getattr(self._consumer, "_closed", False):
+                    log.warning(f"[{self.group_id}] ⚠️ Consumidor cerrado, recreando…")
+                    print(f"[{self.group_id}] ⚠️ Consumidor cerrado, recreando…")
+                    self._consumer = self._create_consumer()
+                    reconnect_attempts = 0
+                    continue
+                    
                 # Polling de mensajes
                 messages = self._consumer.poll(timeout_ms=1000, max_records=100)
                 
@@ -426,9 +436,12 @@ class KafkaEventConsumer:
                         self._is_healthy = True
                         self._last_assigned = now  # registramos el último momento saludable
                     else:
-                        log.warning("⚠️ No hay particiones asignadas")
+                        
                         if not hasattr(self, "_last_assigned"):
                             self._last_assigned = now
+                            return
+
+                        log.warning("⚠️ No hay particiones asignadas")
 
                         # Si lleva demasiado tiempo sin particiones, reinicia
                         if now - self._last_assigned > UNASSIGNED_TIMEOUT:
@@ -505,14 +518,13 @@ class KafkaEventConsumer:
             time.sleep(0.2)
 
 
-
     def _cleanup(self):
         """Limpia recursos al detener."""
         log.info(f"🧹 [{self.group_id}] Limpiando recursos...")
         
         # Commit final
         if self._pending_offsets:
-            self._commit_offsets()
+            self.safe_commit()
         
         # Cerrar consumidor
         if self._consumer:
@@ -534,6 +546,9 @@ class KafkaEventConsumer:
         if self._running:
             log.warning("⚠️ El consumidor ya está en ejecución")
             return
+
+        # Crear el consumer ANTES del hilo
+        self._consumer = self._create_consumer()
 
         self._running = True
         self._thread = threading.Thread(
@@ -588,6 +603,41 @@ class KafkaEventConsumer:
         except AssertionError as e:
             log.error(f"❌ Poll falló: {e}")
             return  {"status": "error", "message": str(e)}  
+
+
+
+    def safe_commit(self):
+        if not self._consumer:
+            return
+
+        while True:
+            try:
+                self._consumer.commit()
+                return  # éxito
+            except RebalanceInProgressError:
+                log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando tras poll()...")
+                self._consumer.poll(timeout_ms=100)
+                time.sleep(0.1)
+            except Exception as e:
+                log.error(f"❌ Error inesperado en commit: {e}")
+                return
+
+
+    def safe_commit_offsets(self, offsets):
+        if not self._consumer:
+            return
+
+        while True:
+            try:
+                self._consumer.commit(offsets=offsets)
+                return
+            except RebalanceInProgressError:
+                log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando tras poll()…")
+                self._consumer.poll(timeout_ms=100)
+                time.sleep(0.1)
+            except Exception as e:
+                log.error(f"❌ Error inesperado en commit: {e}")
+                return
 
 
 
