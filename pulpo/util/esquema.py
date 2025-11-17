@@ -67,8 +67,8 @@ class CompaiMessage(BaseModel):
         default=None, description="Indica si la conversacion está activa o ya cerrada"
     )
 
-    human_id: str = Field(
-        ...,
+    human_id:  Optional[str] = Field(
+        default=None,
         description="Identificador humano asociado al mensaje (humano u otro que use a esta persona virtual)."
     )
 
