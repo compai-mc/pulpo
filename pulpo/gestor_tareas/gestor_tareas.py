@@ -86,7 +86,6 @@ class GestorTareas:
         self.consumer = KafkaEventConsumer(
             topic=TOPIC_TASK_EVENTS,
             callback=self._on_kafka_message,
-            session_id=self.session_id,
             group_id=group_id,
         )
         log.info(f"[GestorTareas] Consumer configurado para topic: {TOPIC_TASK_EVENTS}")
@@ -279,7 +278,7 @@ class GestorTareas:
             **data,
             "origin": self.instance_id,
         }
-        self.producer.publish(TOPIC_TASK_EVENTS, msg, session_id=self.session_id)
+        self.producer.publish(TOPIC_TASK_EVENTS, msg)
         log.debug(f"[GestorTareas] Evento publicado: {event_type} ({data})")
 
 

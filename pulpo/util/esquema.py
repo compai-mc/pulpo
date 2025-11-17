@@ -67,11 +67,6 @@ class CompaiMessage(BaseModel):
         default=None, description="Indica si la conversacion está activa o ya cerrada"
     )
 
-    session_id: str = Field(
-        ...,
-        description="Identificador de la sesión, la particion de kafka, al que pertenece el mensaje."
-    )
-
     human_id: str = Field(
         ...,
         description="Identificador humano asociado al mensaje (humano u otro que use a esta persona virtual)."

@@ -42,7 +42,6 @@ class KafkaEventConsumer:
         self,
         topic: str,
         callback: Callable,
-        session_id: str,
         bootstrap_servers: str = KAFKA_BROKER,
         group_id: Optional[str] = None,
         auto_offset_reset: str = "latest",
@@ -60,7 +59,6 @@ class KafkaEventConsumer:
     ):
         self.topic = topic
         self.callback = callback
-        self.session_id = session_id
         self.bootstrap_servers = bootstrap_servers
         self.group_id = group_id or f"consumer_{topic}_{uuid.uuid4().hex[:8]}"
         self.auto_offset_reset = auto_offset_reset
@@ -332,13 +330,7 @@ class KafkaEventConsumer:
                     for msg in msgs:
                         if not self._running:
                             break
-                            
-                        # Filtro por session_id
-                        if self.session_id:
-                            data = self._deserialize_message(msg.value)
-                            if isinstance(data, dict) and data.get("session_id") != self.session_id:
-                                continue
-
+                                    
                         success = self._process_message_with_retry(msg)
                         
                         if success:
@@ -642,13 +634,26 @@ class KafkaEventConsumer:
 
 
     def _mantener_consumidor_vivo(self):
-        """Hilo en background para mantener vivo el consumidor Kafka."""
+        """Hilo de background que mantiene vivo el consumer Kafka."""
         while self._mantener_polling:
             try:
                 self.poll(0)
             except Exception as e:
-                print(f"⚠️ Error en poll: {e}")
-            time.sleep(1)  # poll cada segundo es suficiente
+                msg = str(e)
+
+                # Errores esperados -> no mostrar
+                if (
+                    "RebalanceInProgress" in msg or
+                    "UnknownMemberId" in msg or
+                    "No hay consumidor inicializado" in msg or
+                    "KafkaConsumer is closed" in msg
+                ):
+                    pass  # silencio
+                else:
+                    print(f"⚠️ Error inesperado en poll: {e}")
+
+            time.sleep(1)
+
 
     def iniciar_polling_background(self):
         """Inicia el hilo de polling."""
@@ -661,8 +666,6 @@ class KafkaEventConsumer:
         self._mantener_polling = False
         if hasattr(self, "_hilo_poll"):
             self._hilo_poll.join(timeout=2)
-
-
 
         
     def get_metrics(self) -> Dict[str, Any]:
