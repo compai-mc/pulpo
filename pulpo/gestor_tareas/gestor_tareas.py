@@ -319,7 +319,7 @@ class GestorTareas:
 
 
     # ========================================================
-    # 🧩 Lógica de finalización
+    # 🧩 Lógica de finalización de tarea al llegar evento
     # ========================================================
     def task_completed(self, job_id: str, task_id: str):
         """Marca una tarea como completada y publica los eventos asociados."""
@@ -337,13 +337,10 @@ class GestorTareas:
             if self.on_task_complete_callback:
                 self.on_task_complete_callback(job_id, task_id)
 
-            # ¿Está todo completado?
+            # ¿Está todo completado? --> envio evento end_job
             if all(t["completed"] for t in job["tasks"].values()):
                 self._publicar_evento("end_job", {"job_id": job_id})
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
-
-                #if self.on_complete_callback:
-                    #self.on_complete_callback(job_id)
 
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
