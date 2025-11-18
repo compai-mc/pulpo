@@ -408,6 +408,7 @@ class EnviarPropuestaTool(ToolMessage):
             (
                 "Mensaje indica solicitud de presupuesto; se genera la propuesta ERP y se envía por correo.",
                 cls(params=CompaiMessage(
+                    job_id="cc099db97a3545668423874933ed6119",
                     from_address="agente.ia",
                     to_address="cliente@empresa.com",
                     subject="Propuesta instalación solar",
@@ -488,7 +489,7 @@ class EnviarPropuestaTool(ToolMessage):
         return FinalResultTool(
             info={
                 "resultado": "ok", 
-                "job_id": historia.get("job_id", None),
+                "job_id": params.get("job_id", ""),
                 "respuesta": {
                     "propuesta": resultado_propuesta,
                     "correo": resultado_correo
