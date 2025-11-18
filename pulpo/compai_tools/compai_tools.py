@@ -488,6 +488,7 @@ class EnviarPropuestaTool(ToolMessage):
         return FinalResultTool(
             info={
                 "resultado": "ok", 
+                "job_id": historia.get("job_id", None),
                 "respuesta": {
                     "propuesta": resultado_propuesta,
                     "correo": resultado_correo
