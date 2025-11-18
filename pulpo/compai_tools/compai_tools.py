@@ -489,7 +489,7 @@ class EnviarPropuestaTool(ToolMessage):
         return FinalResultTool(
             info={
                 "resultado": "ok", 
-                "job_id": params.get("job_id", ""),
+                "job_id": self.params.job_id,
                 "respuesta": {
                     "propuesta": resultado_propuesta,
                     "correo": resultado_correo
