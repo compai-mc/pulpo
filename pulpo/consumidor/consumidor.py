@@ -264,51 +264,38 @@ class KafkaEventConsumer:
         elapsed_ms = (time.time() - self._last_commit_time) * 1000
         return elapsed_ms >= self.commit_interval_ms or len(self._pending_offsets) >= 50
 
-    def _can_commit(self) -> bool:
-        """
-        Devuelve True solo si el consumer está en estado estable ("joined").
-        Esto evita errores como UnknownMemberIdError y RebalanceInProgressError.
-        """
-        if not self._consumer:
-            return False
-        
-        coord = self._consumer._coordinator
-
-        # Estados posibles:
-        #   joined           -> SEGURO
-        #   rebalancing      -> NO SEGURO
-        #   down             -> NO SEGURO
-        #   unknown          -> NO SEGURO
-        return getattr(coord, "state", None) == "joined"
 
     def _commit_offsets(self):
-        """Hace commit de los offsets pendientes."""
+        """Commit de los offsets pendientes (manejo seguro para kafka-python)."""
+
         if not self._pending_offsets:
             return
-        
-        # ⛔ No hacer commit durante rebalances
-        if not self._can_commit():
-            log.warning("⏳ Commit aplazado porque el grupo está en rebalance.")
-            return
 
+        # Construcción de offsets a commitear:
+        offsets = {
+            tp: OffsetAndMetadata(offset + 1, metadata="")
+            for tp, offset in self._pending_offsets.items()
+        }
 
         try:
-            offsets = {
-                tp: OffsetAndMetadata(offset + 1, metadata="", leader_epoch=-1)
-                for tp, offset in self._pending_offsets.items()
-            }
-            
-            self.safe_commit_offsets(offsets)
-            
+            # kafka-python hace internamente toda la gestión del rebalance.
+            self._consumer.commit(offsets=offsets)
+
             log.info(f"💾 Commit exitoso de {len(offsets)} particiones")
             print(f"💾 Commit exitoso de {len(offsets)} particiones")
+
             self._pending_offsets.clear()
             self._last_commit_time = time.time()
-            
+
         except CommitFailedError as e:
-            log.error(f"⚠️ Fallo en commit: {e}")
+            # Esto es NORMAL en Kafka cuando hay rebalance.
+            log.warning(f"⚠️ CommitFailedError (hay rebalance, se reintentará): {e}")
+            print(f"⚠️ CommitFailedError (hay rebalance, se reintentará): {e}")
+            # No hacer nada. En el siguiente poll() Kafka recupera estado y listo.
+
         except Exception as e:
             log.error(f"❌ Error inesperado en commit: {e}")
+            print(f"❌ Error inesperado en commit: {e}")
 
     # ============================================================
     # BUCLE PRINCIPAL
