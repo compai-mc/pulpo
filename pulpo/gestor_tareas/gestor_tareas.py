@@ -46,7 +46,6 @@ class GestorTareas:
 
     def __init__(
         self,
-        session_id: str,
         on_complete_callback=None,
         on_all_complete_callback=None,
         on_task_complete_callback=None,
@@ -55,8 +54,6 @@ class GestorTareas:
         if self._initialized:
             log.warning("[GestorTareas] Ya inicializado, ignorando nueva configuración")
             return
-
-        self.session_id = session_id
 
         # --- Conexión a ArangoDB ---
         try:
