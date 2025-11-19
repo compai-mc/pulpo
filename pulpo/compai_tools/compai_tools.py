@@ -206,10 +206,11 @@ class PropuestaERPTool(lr.agent.ToolMessage):
         if not historia:
             return FinalResultTool(
                 info={
+                    "resultado": "error",
                     "respuesta": None,
                     "mensaje": "No se proporcionó historia para crear la propuesta.",
                     "mode": "offline",
-                    "status": "error",
+                    "status": {},
                     "reejecutar": False
                 }
             )
@@ -235,21 +236,24 @@ class PropuestaERPTool(lr.agent.ToolMessage):
         if not resultado.get("success", False):
             return FinalResultTool(
                 info={
+                    "resultado": "error", 
                     "respuesta": resultado,
                     "mensaje": "No se pudo crear la propuesta en el ERP.",
                     "mode": "online",
-                    "status": "error",
+                    "status": {},
                     "reejecutar": False
                 }
             )
 
         return FinalResultTool(
             info={
+                "resultado": "ok", 
+                "job_id": self.params.job_id,
                 "respuesta": resultado,
                 "adjunto": pdf_base64,
                 "mensaje": "Propuesta creada correctamente en el ERP.",
                 "mode": "online",
-                "status": "completado",
+                "status": {"proposal" : "done"},
                 "reejecutar": False
             }
         )
@@ -330,10 +334,11 @@ class EnviarCorreoTool(ToolMessage):
         if not historia:
             return FinalResultTool(
                 info={
+                    "resultado": "error",
                     "respuesta": None,
                     "mensaje": "No se proporcionó historia para enviar el correo.",
                     "mode": "offline",
-                    "status": "error",
+                    "status": {},
                     "reejecutar": False
                 }
             )
@@ -374,20 +379,22 @@ class EnviarCorreoTool(ToolMessage):
         if resultado.get("status", False) != "success":
             return FinalResultTool(
                 info={
+                    "resultado": "error",
                     "respuesta": resultado,
                     "mensaje": "No se ha podido enviar el correo.",
                     "mode": "online",
-                    "status": "error",
+                    "status": {},
                     "reejecutar": False
                 }
             )
 
         return FinalResultTool(
             info={
+                "resultado": "ok",
                 "respuesta": resultado,
                 "mensaje": "Correo enviado correctamente.",
                 "mode": "online",
-                "status": "hecho_correo",
+                "status": {"enviar_correo": "done"},
                 "reejecutar": False
             }
         )
@@ -445,7 +452,7 @@ class EnviarPropuestaTool(ToolMessage):
         propuesta_tool.agent = self.agent  # 🔥 Reutiliza el mismo agente LLM
         resultado_propuesta = propuesta_tool.handle().info
 
-        if resultado_propuesta.get("status") == "error":
+        if resultado_propuesta.get("resultado") == "error":
             return FinalResultTool(
                 info={
                     "resultado": "error",
@@ -467,7 +474,7 @@ class EnviarPropuestaTool(ToolMessage):
         correo_tool.agent = self.agent
         resultado_correo = correo_tool.handle().info
 
-        if resultado_correo.get("status") == "error":
+        if resultado_correo.get("resultado") == "error":
             return FinalResultTool(
                 info={
                     "resultado": "warning",
@@ -496,69 +503,9 @@ class EnviarPropuestaTool(ToolMessage):
                 },
                 "mensaje": "✅ Propuesta creada y enviada correctamente.",
                 "mode": "online",
-                "status": {"proposal" : "done"},
+                "status": {"proposal" : "done", "send_proposal": "done"},
                 "reejecutar": False
             }
         )
 
 
-
-class PruebaTool(ToolMessage):
-    request: str = "create_test"
-    purpose: str = "Crea una tool de prueba."
-    params: CompaiMessage
-
-    @classmethod
-    def examples(cls):
-        return [
-            (
-                "Mensaje indica solicitud de presupuesto; se genera la propuesta ERP y se envía por correo.",
-                cls(params=CompaiMessage(
-                    from_address="agente.ia",
-                    to_address="cliente@empresa.com",
-                    subject="Propuesta instalación solar",
-                    message="Estimado cliente, adjuntamos la propuesta solicitada. Un cordial saludo.",
-                    history={
-                        "subject": "Presupuesto instalación solar",
-                        "sender": "cliente@empresa.com",
-                        "productos": ["panel solar 400W", "batería 5kWh"],
-                        "comentarios": ["Cliente solicita presupuesto completo con instalación."]
-                    },
-                    action=["create_and_send_proposal"]
-                ))
-            ),
-        ]
-
-    def handle(self) -> FinalResultTool:
-        
-        params = self.params
-        return FinalResultTool(
-            info={
-                "resultado": "error",
-                "respuesta": params,
-                "mensaje": "No se proporcionó historia para enviar el correo.",
-                "mode": "offline",
-                "status": {"test": "done"},
-                "reejecutar": False
-            }
-        )
-
-
-if __name__ == "__main__":
-
-    params = CompaiMessage(
-        job_id="cc099db97a3545668423874933ed6119",
-        from_address="agente",
-        to_address="cliente@test.com",
-        subject="Propuesta",
-        message="Hola",
-        history={"subject": "presupuesto"},
-    )
-
-    tool = EnviarPropuestaTool(params=params)
-    result = tool.handle()
-
-    gestionar_resultado_tool = tool.gestionar_resultado_tool(result.info)
-
-    print("RESULTADO:")
-    print(result.info)

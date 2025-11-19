@@ -264,11 +264,34 @@ class KafkaEventConsumer:
         elapsed_ms = (time.time() - self._last_commit_time) * 1000
         return elapsed_ms >= self.commit_interval_ms or len(self._pending_offsets) >= 50
 
+    def _can_commit(self) -> bool:
+        """
+        Devuelve True solo si el consumer está en estado estable ("joined").
+        Esto evita errores como UnknownMemberIdError y RebalanceInProgressError.
+        """
+        if not self._consumer:
+            return False
+        
+        coord = self._consumer._coordinator
+
+        # Estados posibles:
+        #   joined           -> SEGURO
+        #   rebalancing      -> NO SEGURO
+        #   down             -> NO SEGURO
+        #   unknown          -> NO SEGURO
+        return getattr(coord, "state", None) == "joined"
+
     def _commit_offsets(self):
         """Hace commit de los offsets pendientes."""
         if not self._pending_offsets:
             return
         
+        # ⛔ No hacer commit durante rebalances
+        if not self._can_commit():
+            log.warning("⏳ Commit aplazado porque el grupo está en rebalance.")
+            return
+
+
         try:
             offsets = {
                 tp: OffsetAndMetadata(offset + 1, metadata="", leader_epoch=-1)
