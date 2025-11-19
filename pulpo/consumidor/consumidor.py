@@ -273,7 +273,7 @@ class KafkaEventConsumer:
 
         # Construcción de offsets a commitear:
         offsets = {
-            tp: OffsetAndMetadata(offset + 1, metadata="")
+            tp: OffsetAndMetadata(offset + 1, "", -1)
             for tp, offset in self._pending_offsets.items()
         }
 
