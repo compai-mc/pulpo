@@ -249,7 +249,7 @@ class PropuestaERPTool(lr.agent.ToolMessage):
             info={
                 "resultado": "ok", 
                 "job_id": self.params.job_id,
-                "respuesta": resultado,
+                "respuesta": proposal,
                 "adjunto": pdf_base64,
                 "mensaje": "Propuesta creada correctamente en el ERP.",
                 "mode": "online",
@@ -492,6 +492,11 @@ class EnviarPropuestaTool(ToolMessage):
         # ✅ Resultado final combinado
         #
         # Actualizar el job_id con la informacion de proposal hecho
+        historia["proposal"] = resultado_propuesta.get("respuesta", "")
+        
+        from pulpo.gestor_tareas.gestor_tareas import GestorTareas
+        gestor_tareas = GestorTareas()
+        gestor_tareas.update_job(self.params.job_id, {"metadata": historia})
 
         return FinalResultTool(
             info={
