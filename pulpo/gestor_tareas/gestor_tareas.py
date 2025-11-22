@@ -12,7 +12,8 @@ sys.path.append(str(project_root))
 
 from pulpo.util.util import require_env
 
-import config
+from config import config_global
+estado_tarea = config_global.get("estado_tarea", None)
 
 # Importar productor, consumidor y utilidades
 from pulpo.publicador.publicador import KafkaEventPublisher
@@ -334,8 +335,18 @@ class GestorTareas:
             if self.on_task_complete_callback:
                 self.on_task_complete_callback(job_id, task_id)
 
-            # ¿Está todo completado? --> envio evento end_job
+            # ¿Está todo completado? --> actualizo job yenvio evento end_job
             if all(t["completed"] for t in job["tasks"].values()):
+            
+                # Cambia el estado de la historia de INTERPRETADO a done
+                historia = job.get("metadata", {})
+                if "clasificacion" in historia and "status" in historia["clasificacion"]:
+                    historia \
+                        .setdefault("clasificacion", {}) \
+                        .setdefault("status", {})[estado_tarea["INTERPRETADO"]] = "done"
+                self.collection.update(job)
+
+                #  Publicar mensaje de job completado  
                 self._publicar_evento("end_job", {"job_id": job_id})
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
