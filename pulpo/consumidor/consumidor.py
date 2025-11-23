@@ -19,12 +19,21 @@ HEALTH_CHECK_INTERVAL = int(require_env("KAFKA_HEALTH_CHECK_INTERVAL"))
 HEALTH_CHECK_INTERVAL=int(require_env("HEALTH_CHECK_INTERVAL"))
 UNASSIGNED_TIMEOUT=int(require_env("UNASSIGNED_TIMEOUT"))
 
-logging.basicConfig(
+
+"""logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s [%(name)s] - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger("consumidor")
+"""
+
+from pulpo.logueador import log
+log_time = datetime.now().isoformat(timespec='minutes')
+log.set_propagate(False)
+log.set_log_file(f"log/consumidor[{log_time}].log")
+log.set_log_level("DEBUG")
+
 
 class KafkaEventConsumer:
     """

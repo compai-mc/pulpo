@@ -7,7 +7,13 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import hvac
+from datetime import datetime
 
+from pulpo.logueador import log
+log_time = datetime.now().isoformat(timespec='minutes')
+log.set_propagate(False)
+log.set_log_file(f"log/util[{log_time}].log")
+log.set_log_level("DEBUG")
 
 def require_env(var_name: str) -> str:
     value = os.getenv(var_name)
@@ -47,17 +53,17 @@ def load_env(
         try:
             client = hvac.Client(url=vault_addr, token=vault_token)
             if client.is_authenticated():
-                print("✅ Vault conectado correctamente")
+                log.info("✅ Vault conectado correctamente")
                 load_all_secrets(client, vault_path)
                 vault_loaded = True
             else:
-                print("⚠️ Token inválido, usando .env local")
+                log.warning("⚠️ Token inválido, usando .env local")
         except Exception as e:
-            print(f"⚠️ Error accediendo a Vault: {e}")
+            log.error(f"⚠️ Error accediendo a Vault: {e}")
 
     # --- 2. .env local si Vault no funcionó ---
     if not vault_loaded:
-        print("💡 Usando variables locales del .env")
+        log.info("💡 Usando variables locales del .env")
         load_dotenv(
             dotenv_path=Path(env_path),
             override=True
@@ -79,10 +85,10 @@ def load_env(
         for key, value in config_global_static.items():
             os.environ[str(key)] = str(value)
 
-        print("🔧 Config-service cargado correctamente")
+        log.info("🔧 Config-service cargado correctamente")
 
     except Exception as e:
-        print(f"⚠️ No se pudo cargar config-service: {e}")
+        log.error(f"⚠️ No se pudo cargar config-service: {e}")
 
     return { "global": config_global, "especifico": config_especifico }
 
