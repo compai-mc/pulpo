@@ -9,7 +9,7 @@ from datetime import datetime
 from pulpo.logueador import log
 log_time = datetime.now().isoformat(timespec='minutes')
 log.set_propagate(True)
-log.set_log_file(f"log/persona_virtual[{log_time}].log")
+#log.set_log_file(f"log/persona_virtual[{log_time}].log")
 log.set_log_level("DEBUG")
 
 # Añadir el directorio raíz del proyecto al path de Python

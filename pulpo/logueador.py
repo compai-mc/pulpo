@@ -22,7 +22,12 @@ class Logueador:
 
         handler = logging.FileHandler(fichero, mode="a", encoding="utf-8")
         formatter = logging.Formatter(
-            "📌 %(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(funcName)s(): %(message)s"
+            "📌 %(asctime)s  "
+            "%(levelname)-8s  "      # nivel en columna de 8 caracteres, alineado a la izquierda
+            "%(filename)-20s  "      # filename ocupando 20 caracteres
+            "%(lineno)-4d  "         # línea ocupando 4 caracteres
+            "%(funcName)-20s  "      # nombre de función ocupando 20 caracteres
+            "%(message)s"
         )
         handler.setFormatter(formatter)
 

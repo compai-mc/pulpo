@@ -30,8 +30,8 @@ log = logging.getLogger("consumidor")
 
 from pulpo.logueador import log
 log_time = datetime.now().isoformat(timespec='minutes')
-log.set_propagate(False)
-log.set_log_file(f"log/consumidor[{log_time}].log")
+log.set_propagate(True)
+#log.set_log_file(f"log/consumidor[{log_time}].log")
 log.set_log_level("DEBUG")
 
 
