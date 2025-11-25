@@ -1,4 +1,5 @@
 import json
+import json5
 import re
 import ast
 from json.decoder import scanstring
@@ -71,7 +72,7 @@ def load_env(
 
     # --- 3. Config-service ---
     try:
-        from ..proxy_config_service import ConfigClient
+        from pulpo.proxies.proxy_config_service import ConfigClient
         config_global = ConfigClient().get_config("compai_global").get("config", {})
         config_global_static = config_global.get("static", {})
 
@@ -170,7 +171,7 @@ def extraer_json_del_texto(texto) -> dict:
 
     # 7. Probar con json5 si está disponible
     try:
-        import json5
+        
         return json5.loads(fixed)
     except Exception:
         pass
@@ -257,8 +258,9 @@ if __name__ == "__main__":
     for s in bad_jsons:
         print("Entrada:", s)
         try:
-            data = arreglar_json(s)
-            print("Arreglado:", data)
+            #data = arreglar_json(s)
+            #print("Arreglado:", data)
+            pass
         except Exception as e:
             print("Error:", e)
         print("-"*40)
