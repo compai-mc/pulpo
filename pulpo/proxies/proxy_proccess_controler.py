@@ -39,3 +39,17 @@ class ProccessControlerProxy:
         )
         response.raise_for_status()
         return response.json()
+    
+
+    def get_product_price(self, product_id: str, client_id: str) -> Dict:
+        
+        response = requests.get(
+            f"{self.base_url}/product/price",
+            params={
+                "referencia_producto": product_id,
+                "referencia_cliente": client_id
+            },
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
