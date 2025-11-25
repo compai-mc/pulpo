@@ -326,38 +326,43 @@ class GestorTareas:
     # 🧩 Lógica de finalización de tarea al llegar evento
     # ========================================================
     def task_completed(self, job_id: str, task_id: str):
-        """Marca una tarea como completada y publica los eventos asociados."""
         try:
             job = self.collection.get(job_id)
             if not job or task_id not in job["tasks"]:
                 log.error(f"[GestorTareas] No se encontró tarea '{task_id}' en job '{job_id}'")
                 return
 
+            # Primer update → marca la tarea completada
             job["tasks"][task_id]["completed"] = True
             self.collection.update(job)
             log.info(f"[GestorTareas] ✔ Tarea '{task_id}' completada en job '{job_id}'")
 
-            # Callback por tarea
+            # Callback
             if self.on_task_complete_callback:
                 self.on_task_complete_callback(job_id, task_id)
 
-            # ¿Está todo completado? --> actualizo job yenvio evento end_job
+            # ¿Todas completadas?
             if all(t["completed"] for t in job["tasks"].values()):
-            
-                # Cambia el estado de la historia de INTERPRETADO a done
+                
+                # ⬅️ Recarga el job para obtener el nuevo _rev
+                job = self.collection.get(job_id)
+
+                # Actualizo la historia
                 historia = job.get("metadata", {})
                 if "clasificacion" in historia and "status" in historia["clasificacion"]:
                     historia \
                         .setdefault("clasificacion", {}) \
                         .setdefault("status", {})[estado_tarea["INTERPRETADO"]] = "done"
+
                 self.collection.update(job)
 
-                #  Publicar mensaje de job completado  
+                # Evento final
                 self._publicar_evento("end_job", {"job_id": job_id})
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
+
 
 
 # ========================================================
