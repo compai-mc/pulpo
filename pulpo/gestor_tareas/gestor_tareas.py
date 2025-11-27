@@ -343,27 +343,29 @@ class GestorTareas:
 
             # ¿Todas completadas?
             if all(t["completed"] for t in job["tasks"].values()):
-                
-                # ⬅️ Recarga el job para obtener el nuevo _rev
-                job = self.collection.get(job_id)
-
-                # Actualizo la historia
-                historia = job.get("metadata", {})
-                if "clasificacion" in historia and "status" in historia["clasificacion"]:
-                    historia \
-                        .setdefault("clasificacion", {}) \
-                        .setdefault("status", {})[estado_tarea["INTERPRETADO"]] = "done"
-
-                self.collection.update(job)
-
-                # Evento final
-                self._publicar_evento("end_job", {"job_id": job_id})
-                log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
+                job = self.job_completed(job_id)
 
         except Exception as e:
             log.error(f"[GestorTareas] Error en task_completed: {e}")
 
 
+    def job_completed(self, job_id: str):
+        # ⬅️ Recarga el job para obtener el nuevo _rev
+        job = self.collection.get(job_id)
+
+        # marco la historia con interpretado a done
+        historia = job.get("metadata", {})
+        if "clasificacion" in historia and "status" in historia["clasificacion"]:
+            historia \
+                .setdefault("clasificacion", {}) \
+                .setdefault("status", {})[estado_tarea["INTERPRETADO"]] = "done"
+
+        # Actualizo la historia en base de datos
+        self.collection.update(job)
+
+        # Publico evento de fin de job
+        self._publicar_evento("end_job", {"job_id": job_id})
+        log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
 
 # ========================================================
 # 🧪 Ejemplo de uso
