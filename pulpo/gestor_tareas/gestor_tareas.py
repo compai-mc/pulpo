@@ -247,6 +247,18 @@ class GestorTareas:
             return tasks[task_id].get(field)
         return None
     
+    def get_job_field(self, job_id: str, field: str):
+        """
+        Busca en el job indicado el valor de un campo concreto (field).
+        Devuelve el valor si lo encuentra, si no None.
+        """
+
+        job = self.collection.get(job_id)
+        if not job:
+            return None
+        return job.get(field, None)
+
+    
     def set_task_field(self, job_id: str, task_id: str, field: str, value):
         """
         Modifica o crea un campo dentro del task indicado de un job.
@@ -264,6 +276,22 @@ class GestorTareas:
 
         tasks[task_id][field] = value
         job["tasks"] = tasks
+
+        self.collection.update(job)  
+        return True
+    
+
+    def set_job_field(self, job_id: str, field: str, value):
+        """
+        Modifica o crea un campo dentro del job indicado.
+        Si el job existe, actualiza el campo y guarda el documento.
+        Si el job no existe, lo crea con el campo indicado.
+        """
+        job = self.collection.get(job_id)
+        if not job:
+            return False  
+
+        job[field] = value
 
         self.collection.update(job)  
         return True
