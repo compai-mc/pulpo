@@ -18,19 +18,17 @@ class CorreoClient:
 
         params = {
             "destinatario": destinatario,
-            "asunto": asunto,
+            "asunto": asunto or "Correo sin asunto",
             "mensaje": mensaje
         }
 
-        if remitente:
-            params["remitente"] = remitente
+        params["remitente"] = remitente or ""
 
         if adjuntos:
-            # Convierte la lista de tuplas a JSON string como espera el endpoint
-            params["adjuntos"] = json.dumps([
+            params["adjuntos"] = [
                 {"nombre": nombre, "contenido": contenido, "tipo": tipo}
                 for nombre, contenido, tipo in adjuntos
-            ])
+            ]
 
         with httpx.Client() as client:
             response = client.post(url, json=params) 
