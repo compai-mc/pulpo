@@ -33,6 +33,9 @@ class CorreoClient:
             ])
 
         with httpx.Client() as client:
-            response = client.post(url, params=params)
+            response = client.post(url, json=params) 
             response.raise_for_status()
             return response.json()
+
+
+    
