@@ -36,6 +36,8 @@ ARANGO_PASSWORD = require_env("ARANGO_PASSWORD")
 ARANGO_COLLECTION = require_env("ARANGO_COLLECTION_TAREAS")
 TOPIC_TASK_EVENTS = require_env("TOPIC_TASK_EVENTS")
 
+DLQ_CONSUMER = require_env("DLQ_CONSUMER")
+DLQ_COMPAI = require_env("DLQ_COMPAI")
 
 # ========================================================
 # 🧠 Clase principal: GestorTareas
@@ -394,6 +396,41 @@ class GestorTareas:
         # Publico evento de fin de job
         self._publicar_evento("end_job", {"job_id": job_id})
         log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
+
+
+    def enviar_a_dlq(self, job_id: str, razon: str, payload=None):
+        mensaje = {
+            "job_id": job_id,
+            "razon": razon,
+            "payload": payload or {}
+        }
+
+        try:
+            self.producer.publish(
+                DLQ_COMPAI,
+                mensaje
+            )
+            log.info(f"[DLQ] job_id={job_id} enviado a DLQ_COMPAI | razón: {razon}")
+
+        except Exception as e:
+            log.error(f"[DLQ] Error enviando job_id={job_id} a DLQ: {e}")
+
+    def enviar_a_dlq_consumer(self, job_id: str, razon: str, payload=None):
+        mensaje = {
+            "job_id": job_id,
+            "razon": razon,
+            "payload": payload or {}
+        }
+
+        try:
+            self.producer.publish(
+                DLQ_CONSUMER,
+                mensaje
+            )
+            log.info(f"[DLQ] job_id={job_id} enviado a DLQ_COMPAI | razón: {razon}")
+
+        except Exception as e:
+            log.error(f"[DLQ] Error enviando job_id={job_id} a DLQ: {e}")   
 
 # ========================================================
 # 🧪 Ejemplo de uso
