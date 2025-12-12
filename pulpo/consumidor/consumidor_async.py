@@ -545,6 +545,10 @@ class AsyncKafkaEventConsumer:
         """Verifica si el consumidor está saludable."""
         return self._is_healthy and self._running
 
+    def is_running(self) -> bool:
+        """Verifica si el consumidor está en ejecución."""
+        return self._running
+
     # -------------------------------------------------------------------------
     # LECTURA DIRECTA DE UN OFFSET
     # -------------------------------------------------------------------------
