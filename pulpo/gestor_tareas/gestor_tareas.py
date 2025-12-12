@@ -378,6 +378,10 @@ class GestorTareas:
         Returns:
             True si se actualizó exitosamente, False en caso contrario
         """
+        if job_id is None:
+            log.warning("[GestorTareas] ⚠️ Intento de actualizar job con job_id=None")
+            return False
+            
         success = False
         
         def _update_job_operation():
