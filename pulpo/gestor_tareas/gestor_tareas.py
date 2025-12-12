@@ -238,7 +238,6 @@ class GestorTareas:
         """
         if not tasks:
             log.debug("[GestorTareas] ⚠️ Intento de crear un job sin tareas")
-            return None
 
         job_id = job_id or str(uuid.uuid4())
         nuevas_tareas = []
