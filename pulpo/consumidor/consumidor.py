@@ -338,7 +338,18 @@ class KafkaEventConsumer:
                     continue
                     
                 # Polling de mensajes (1 solo mensaje para callbacks de 10 minutos)
-                messages = consumer.poll(timeout_ms=1000, max_records=1)
+                try:
+                    with self._lock:
+                        messages = consumer.poll(timeout_ms=1000, max_records=1)
+                except TypeError as te:
+                    # Error interno de kafka-python: 'NoneType' object is not iterable
+                    # Ocurre cuando record_iterator es None (mensaje corrupto o problema de deserialización)
+                    if "'NoneType' object is not iterable" in str(te):
+                        log.warning(f"⚠️ [{self.group_id}] Mensaje corrupto detectado, omitiendo y continuando...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        raise
                 
                 if not messages:
                     # Health check periódico
@@ -352,13 +363,6 @@ class KafkaEventConsumer:
                             break
                         
                         start_time = time.time()
-                        
-                        # Si esperamos un callback largo, activar polling en background
-                        # para mantener vivo el consumer durante el procesamiento
-                        if not self._mantener_polling:
-                            self.iniciar_polling_background()
-                            log.debug(f"🔄 [{self.group_id}] Polling en background activado para callbacks largos")
-                        
                         success = self._process_message_with_retry(msg)
                         elapsed = time.time() - start_time
                         
