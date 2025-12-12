@@ -51,7 +51,7 @@ class KafkaEventConsumer:
         commit_interval_ms: int = COMMIT_INTERVAL_MS,
         session_timeout_ms: int = 30000,
         heartbeat_interval_ms: int = 10000,
-        max_poll_interval_ms: int = 900000,  # 15 minutos para callbacks largos (10 min + margen)
+        max_poll_interval_ms: int = 1800000,  # 30 minutos para callbacks largos (10 min + margen)
         pass_raw_message: bool = False,
         
     ):
@@ -352,14 +352,25 @@ class KafkaEventConsumer:
                             break
                         
                         start_time = time.time()
+                        
+                        # Si esperamos un callback largo, activar polling en background
+                        # para mantener vivo el consumer durante el procesamiento
+                        if not self._mantener_polling:
+                            self.iniciar_polling_background()
+                            log.debug(f"🔄 [{self.group_id}] Polling en background activado para callbacks largos")
+                        
                         success = self._process_message_with_retry(msg)
                         elapsed = time.time() - start_time
                         
+                        # Calcular porcentaje del límite usado
+                        max_poll_seconds = self.max_poll_interval_ms / 1000.0
+                        percent_used = (elapsed / max_poll_seconds) * 100
+                        
                         # Advertir si se acerca al límite de max_poll_interval
                         if elapsed > 60:
-                            log.info(f"⏱️ Mensaje procesado en {elapsed:.1f}s")
-                        if elapsed > 600:  # Más de 10 minutos
-                            log.warning(f"⚠️ Callback LARGO: {elapsed:.1f}s - Cerca del límite!")
+                            log.info(f"⏱️ Mensaje procesado en {elapsed:.1f}s ({percent_used:.1f}% del límite)")
+                        if elapsed > (max_poll_seconds * 0.66):  # Más del 66% del límite
+                            log.warning(f"⚠️ Callback LARGO: {elapsed:.1f}s ({percent_used:.1f}% del límite de {max_poll_seconds:.0f}s)")
                         
                         if success:
                             self._pending_offsets[tp] = msg.offset
@@ -698,9 +709,12 @@ class KafkaEventConsumer:
 
     def iniciar_polling_background(self):
         """Inicia el hilo de polling."""
+        if self._mantener_polling:
+            return  # Ya está activo
         self._mantener_polling = True
         self._hilo_poll = threading.Thread(target=self._mantener_consumidor_vivo, daemon=True)
         self._hilo_poll.start()
+        log.info(f"🔄 [{self.group_id}] Polling en background iniciado")
 
     def detener_polling_background(self):
         """Detiene el hilo de polling."""
