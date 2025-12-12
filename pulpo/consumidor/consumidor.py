@@ -14,19 +14,8 @@ KAFKA_BROKER = require_env("KAFKA_BROKER")
 MAX_RETRY_ATTEMPTS = int(require_env("KAFKA_MAX_RETRIES"))
 RETRY_BACKOFF_MS = int(require_env("KAFKA_RETRY_BACKOFF_MS"))
 COMMIT_INTERVAL_MS = int(require_env("KAFKA_COMMIT_INTERVAL_MS"))
-HEALTH_CHECK_INTERVAL = int(require_env("KAFKA_HEALTH_CHECK_INTERVAL"))
-
-HEALTH_CHECK_INTERVAL=int(require_env("HEALTH_CHECK_INTERVAL"))
-UNASSIGNED_TIMEOUT=int(require_env("UNASSIGNED_TIMEOUT"))
-
-
-"""logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)s [%(name)s] - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-log = logging.getLogger("consumidor")
-"""
+HEALTH_CHECK_INTERVAL = int(require_env("HEALTH_CHECK_INTERVAL"))
+UNASSIGNED_TIMEOUT = int(require_env("UNASSIGNED_TIMEOUT"))
 
 from pulpo.logueador import log
 log_time = datetime.now().isoformat(timespec='minutes')
@@ -62,7 +51,7 @@ class KafkaEventConsumer:
         commit_interval_ms: int = COMMIT_INTERVAL_MS,
         session_timeout_ms: int = 30000,
         heartbeat_interval_ms: int = 10000,
-        max_poll_interval_ms: int = 300000,
+        max_poll_interval_ms: int = 900000,  # 15 minutos para callbacks largos (10 min + margen)
         pass_raw_message: bool = False,
         
     ):
@@ -107,6 +96,7 @@ class KafkaEventConsumer:
         
         # Health check
         self._last_health_check = time.time()
+        self._last_assigned = time.time()  # Inicializar para evitar AttributeError
         self._is_healthy = True
 
         # Flag temporal para saber si el último envío a DLQ fue exitoso
@@ -138,7 +128,7 @@ class KafkaEventConsumer:
             key_deserializer=lambda k: k.decode("utf-8") if k else None,
             fetch_min_bytes=1,
             fetch_max_wait_ms=500,
-            max_poll_records=100,
+            max_poll_records=1,  # Solo 1 mensaje a la vez para callbacks de 10 minutos
             connections_max_idle_ms=540000,
             request_timeout_ms=40000,
             retry_backoff_ms=self.retry_backoff_ms,
@@ -313,6 +303,7 @@ class KafkaEventConsumer:
     def _consume_loop(self):
         """Bucle principal de consumo con manejo robusto de errores."""
         log.info(f"🚀 [{self.group_id}] Conectando a Kafka en {self.bootstrap_servers}")
+        log.info(f"⚙️ Configurado para callbacks largos: max_poll_interval={self.max_poll_interval_ms/1000:.0f}s, max_poll_records=1")
         
         reconnect_attempts = 0
         max_reconnect_attempts = 5
@@ -321,36 +312,54 @@ class KafkaEventConsumer:
         while self._running:
             try:
                 # Crear consumidor si no existe o está cerrado
-                if self._consumer is None:
+                with self._lock:
+                    consumer = self._consumer
+                
+                if consumer is None:
                     # Esto SOLO ocurre si start() falló antes de crear el consumidor
                     log.info(f"[{self.group_id}] Creando consumidor inicial...")
                     print(f"[{self.group_id}] Creando consumidor inicial...")
-                    self._consumer = self._create_consumer()
+                    with self._lock:
+                        self._consumer = self._create_consumer()
                     reconnect_attempts = 0
                     continue
 
-                if getattr(self._consumer, "_closed", False):
+                try:
+                    is_closed = getattr(consumer, "_closed", False)
+                except:
+                    is_closed = True
+                    
+                if is_closed:
                     log.warning(f"[{self.group_id}] ⚠️ Consumidor cerrado, recreando…")
                     print(f"[{self.group_id}] ⚠️ Consumidor cerrado, recreando…")
-                    self._consumer = self._create_consumer()
+                    with self._lock:
+                        self._consumer = self._create_consumer()
                     reconnect_attempts = 0
                     continue
                     
-                # Polling de mensajes
-                messages = self._consumer.poll(timeout_ms=1000, max_records=100)
+                # Polling de mensajes (1 solo mensaje para callbacks de 10 minutos)
+                messages = consumer.poll(timeout_ms=1000, max_records=1)
                 
                 if not messages:
                     # Health check periódico
                     self._periodic_health_check()
                     continue
                 
-                # Procesar mensajes
+                # Procesar mensajes (con monitoreo de tiempo para callbacks largos)
                 for tp, msgs in messages.items():
                     for msg in msgs:
                         if not self._running:
                             break
-                                    
+                        
+                        start_time = time.time()
                         success = self._process_message_with_retry(msg)
+                        elapsed = time.time() - start_time
+                        
+                        # Advertir si se acerca al límite de max_poll_interval
+                        if elapsed > 60:
+                            log.info(f"⏱️ Mensaje procesado en {elapsed:.1f}s")
+                        if elapsed > 600:  # Más de 10 minutos
+                            log.warning(f"⚠️ Callback LARGO: {elapsed:.1f}s - Cerca del límite!")
                         
                         if success:
                             self._pending_offsets[tp] = msg.offset
@@ -437,21 +446,19 @@ class KafkaEventConsumer:
         if now - self._last_health_check >= HEALTH_CHECK_INTERVAL:
             self._last_health_check = now
 
-            if self._consumer:
+            with self._lock:
+                consumer = self._consumer
+            
+            if consumer:
                 try:
-                    assignment = self._consumer.assignment()
+                    assignment = consumer.assignment()
                     if assignment:
                         # Está todo bien
                         if not self._is_healthy:
                             log.info(f"✅ Consumidor recuperado - Particiones asignadas: {len(assignment)}")
                         self._is_healthy = True
-                        self._last_assigned = now  # registramos el último momento saludable
+                        self._last_assigned = now
                     else:
-                        
-                        if not hasattr(self, "_last_assigned"):
-                            self._last_assigned = now
-                            return
-
                         log.warning("⚠️ No hay particiones asignadas")
 
                         # Si lleva demasiado tiempo sin particiones, reinicia
@@ -537,14 +544,15 @@ class KafkaEventConsumer:
         if self._pending_offsets:
             self.safe_commit()
         
-        # Cerrar consumidor
-        if self._consumer:
-            try:
-                self._consumer.close()
-            except Exception as e:
-                log.error(f"Error cerrando consumidor: {e}")
-            finally:
-                self._consumer = None
+        # Cerrar consumidor (protegido con lock)
+        with self._lock:
+            if self._consumer:
+                try:
+                    self._consumer.close()
+                except Exception as e:
+                    log.error(f"Error cerrando consumidor: {e}")
+                finally:
+                    self._consumer = None
         
         log.info(f"🛑 [{self.group_id}] Consumidor detenido correctamente")
         
@@ -558,8 +566,9 @@ class KafkaEventConsumer:
             log.warning("⚠️ El consumidor ya está en ejecución")
             return
 
-        # Crear el consumer ANTES del hilo
-        self._consumer = self._create_consumer()
+        # Crear el consumer ANTES del hilo (protegido con lock)
+        with self._lock:
+            self._consumer = self._create_consumer()
 
         self._running = True
         self._thread = threading.Thread(
@@ -617,39 +626,52 @@ class KafkaEventConsumer:
 
 
 
-    def safe_commit(self):
-        if not self._consumer:
+    def safe_commit(self, max_retries: int = 30):
+        """Commit con timeout para evitar loops infinitos durante rebalances prolongados."""
+        with self._lock:
+            consumer = self._consumer
+        
+        if not consumer:
             return
 
-        while True:
+        for attempt in range(max_retries):
             try:
-                self._consumer.commit()
+                consumer.commit()
                 return  # éxito
             except RebalanceInProgressError:
-                log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando tras poll()...")
-                self._consumer.poll(timeout_ms=100)
+                if attempt == 0:
+                    log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando...")
+                consumer.poll(timeout_ms=100)
                 time.sleep(0.1)
             except Exception as e:
-                log.error(f"❌ Error inesperado en commit: {e}")
+                log.error(f"❌ Error en commit: {e}")
                 return
+        
+        log.error(f"❌ Commit falló tras {max_retries} reintentos (rebalance prolongado)")
 
 
-    def safe_commit_offsets(self, offsets):
-        if not self._consumer:
+    def safe_commit_offsets(self, offsets, max_retries: int = 30):
+        """Commit de offsets con timeout para evitar loops infinitos durante rebalances prolongados."""
+        with self._lock:
+            consumer = self._consumer
+        
+        if not consumer:
             return
 
-        while True:
+        for attempt in range(max_retries):
             try:
-                self._consumer.commit(offsets=offsets)
+                consumer.commit(offsets=offsets)
                 return
             except RebalanceInProgressError:
-                log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando tras poll()…")
-                self._consumer.poll(timeout_ms=100)
+                if attempt == 0:
+                    log.warning("🔄 Commit aplazado: rebalance en progreso. Retentando...")
+                consumer.poll(timeout_ms=100)
                 time.sleep(0.1)
             except Exception as e:
-                log.error(f"❌ Error inesperado en commit: {e}")
+                log.error(f"❌ Error en commit: {e}")
                 return
-
+        
+        log.error(f"❌ Commit falló tras {max_retries} reintentos (rebalance prolongado)")
 
 
     def _mantener_consumidor_vivo(self):
