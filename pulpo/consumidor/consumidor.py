@@ -317,3 +317,10 @@ class KafkaEventConsumer:
 
     def get_metrics(self):
         return dict(self.metrics)
+    
+    def is_running(self) -> bool:
+        """
+        Indica si el consumidor está activo.
+        API pública usada por gestor_tareas.
+        """
+        return bool(self._running)
