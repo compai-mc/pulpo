@@ -197,11 +197,19 @@ class KafkaEventConsumer:
                 with self._lock:
                     consumer = self._consumer
 
-                if not consumer:
+                if not consumer or getattr(consumer, "_closed", True):
+                    log.warning("⚠️ Consumer no disponible, esperando...")
                     time.sleep(1)
                     continue
 
-                records = consumer.poll(timeout_ms=1000)
+                # Poll con protección de excepciones
+                try:
+                    records = consumer.poll(timeout_ms=1000)
+                except Exception as poll_err:
+                    log.error(f"❌ Error en poll: {poll_err}")
+                    time.sleep(1)
+                    continue
+                    
                 if not records:
                     continue
 
@@ -209,7 +217,14 @@ class KafkaEventConsumer:
 
                 for tp, msgs in records.items():
                     for msg in msgs:
+                        start_time = time.time()
                         ok = self._process_with_retry(msg)
+                        elapsed = time.time() - start_time
+                        
+                        # Advertir si callback es muy largo
+                        if elapsed > 60:
+                            log.warning(f"⏱️ Callback largo: {elapsed:.1f}s para offset {msg.offset}")
+                        
                         self._pending_offsets[tp] = msg.offset
 
                         if ok and self._should_commit():
@@ -217,22 +232,38 @@ class KafkaEventConsumer:
 
             except KafkaError as e:
                 reconnect_attempts += 1
-                log.error(f"Kafka error: {e} (retry {reconnect_attempts})")
+                log.error(f"Kafka error: {e} (retry {reconnect_attempts}/{max_reconnects})")
 
                 if reconnect_attempts > max_reconnects:
                     log.critical("🛑 Máximo de reintentos Kafka alcanzado")
                     break
 
                 backoff = min(2 ** reconnect_attempts, 30)
+                log.info(f"🔄 Reconectando en {backoff}s...")
                 time.sleep(backoff)
 
+                # Cerrar consumer viejo
                 with self._lock:
                     try:
                         if self._consumer:
                             self._consumer.close()
                     except Exception:
                         pass
-                    self._consumer = self._create_consumer()
+                    self._consumer = None
+                
+                # Crear nuevo consumer FUERA del lock
+                try:
+                    new_consumer = self._create_consumer()
+                    with self._lock:
+                        self._consumer = new_consumer
+                    log.info("✅ Consumidor recreado")
+                    
+                    # Esperar asignación de particiones
+                    if not self.wait_until_assigned(timeout=10):
+                        log.warning("⚠️ Timeout esperando asignación tras reconexión")
+                except Exception as create_err:
+                    log.error(f"❌ Error creando consumer: {create_err}")
+                    time.sleep(5)
 
             except Exception as e:
                 log.error(f"Error inesperado: {e}", exc_info=True)
@@ -249,8 +280,12 @@ class KafkaEventConsumer:
         if self._running:
             return
 
+        # Crear consumer FUERA del lock para no bloquear
+        log.info(f"[{self.group_id}] Creando consumidor...")
+        new_consumer = self._create_consumer()
+        
         with self._lock:
-            self._consumer = self._create_consumer()
+            self._consumer = new_consumer
 
         self._running = True
         self._thread = threading.Thread(
@@ -259,6 +294,7 @@ class KafkaEventConsumer:
             daemon=True,
         )
         self._thread.start()
+        log.info(f"[{self.group_id}] Consumidor iniciado")
         
 
     def stop(self):
@@ -273,6 +309,50 @@ class KafkaEventConsumer:
             self._consumer.close()
         if self._dlq_producer:
             self._dlq_producer.close()
+
+    # ------------------------------------------------------------------
+    # POLL COMPATIBLE
+    # ------------------------------------------------------------------
+
+    def poll(self, timeout_ms: int = 1000, wait_ready: bool = False, wait_ready_timeout: int = 3):
+        """
+        Wrapper compatible con KafkaConsumer.poll()
+        Devuelve {TopicPartition: [ConsumerRecord, ...]} o {} en error
+        """
+        if wait_ready:
+            if not self.wait_until_assigned(timeout=wait_ready_timeout):
+                log.error("❌ Timeout esperando asignación del consumidor")
+                self.metrics["poll_errors"] += 1
+                return {}
+
+        with self._lock:
+            consumer = self._consumer
+
+        if not consumer or getattr(consumer, "_closed", True):
+            return {}
+
+        try:
+            return consumer.poll(timeout_ms=timeout_ms)
+        except Exception as e:
+            log.error(f"❌ Error en poll(): {e}", exc_info=True)
+            self.metrics["poll_errors"] += 1
+            return {}
+
+    def wait_until_assigned(self, timeout: int = 10) -> bool:
+        """Espera hasta que el consumidor tenga particiones asignadas."""
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._lock:
+                consumer = self._consumer
+            if consumer:
+                try:
+                    assignment = consumer.assignment()
+                    if assignment:
+                        return True
+                except Exception:
+                    pass
+            time.sleep(0.2)
+        return False
 
     def get_metrics(self):
         return dict(self.metrics)
