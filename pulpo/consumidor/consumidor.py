@@ -105,24 +105,6 @@ class KafkaEventConsumer:
             )
 
     # ------------------------------------------------------------------
-    # READY / ASSIGNMENT
-    # ------------------------------------------------------------------
-
-    def wait_until_assigned(self, timeout: int = 10) -> bool:
-        start = time.time()
-        while time.time() - start < timeout:
-            with self._lock:
-                consumer = self._consumer
-            if consumer:
-                try:
-                    if consumer.assignment():
-                        return True
-                except Exception:
-                    pass
-            time.sleep(0.2)
-        return False
-
-    # ------------------------------------------------------------------
     # PROCESAMIENTO
     # ------------------------------------------------------------------
 
@@ -262,27 +244,23 @@ class KafkaEventConsumer:
     # POLL COMPATIBLE
     # ------------------------------------------------------------------
 
-    def poll(self, timeout_ms: int = 1000, wait_ready: bool = False, wait_ready_timeout: int = 3):
-        if wait_ready:
-            if not self.wait_until_assigned(timeout=wait_ready_timeout):
-                log.error("❌ Timeout esperando asignación del consumidor")
-                self.metrics["poll_errors"] += 1
-                return {}
-
+    def poll(self, timeout_ms: int = 1000):
+        """
+        Wrapper compatible con KafkaConsumer.poll()
+        Devuelve {TopicPartition: [ConsumerRecord, ...]}
+        """
         with self._lock:
             consumer = self._consumer
 
         if not consumer or getattr(consumer, "_closed", True):
-            self.metrics["poll_errors"] += 1
             return {}
 
         try:
             return consumer.poll(timeout_ms=timeout_ms)
         except Exception as e:
             log.error(f"❌ Error en poll(): {e}", exc_info=True)
-            self.metrics["poll_errors"] += 1
             return {}
-
+        
     # ------------------------------------------------------------------
     # CONTROL
     # ------------------------------------------------------------------
