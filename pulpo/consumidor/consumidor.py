@@ -27,8 +27,7 @@ KAFKA_BROKER = require_env("KAFKA_BROKER")
 MAX_RETRY_ATTEMPTS = int(require_env("KAFKA_MAX_RETRIES"))
 RETRY_BACKOFF_MS = int(require_env("KAFKA_RETRY_BACKOFF_MS"))
 COMMIT_INTERVAL_MS = int(require_env("KAFKA_COMMIT_INTERVAL_MS"))
-
-
+WARNING_CALLBACK_SLOW_SEG = int(require_env("KAFKA_WARNING_CALLBACK_SLOW_SEG"))
 class KafkaEventConsumer:
     def __init__(
         self,
@@ -222,7 +221,7 @@ class KafkaEventConsumer:
                         elapsed = time.time() - start_time
                         
                         # Advertir si callback es muy largo
-                        if elapsed > 60:
+                        if elapsed > WARNING_CALLBACK_SLOW_SEG:
                             log.warning(f"⏱️ Callback largo: {elapsed:.1f}s para offset {msg.offset}")
                         
                         self._pending_offsets[tp] = msg.offset
