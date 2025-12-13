@@ -619,9 +619,15 @@ class KafkaEventConsumer:
         log.info(f"✅ [{self.group_id}] Consumidor detenido")
 
 
-    def poll(self, timeout_ms: int = 1000, wait_ready: bool = False):
+    def poll(self, timeout_ms: int = 1000, wait_ready: bool = False, wait_ready_timeout: int = 3):
+        """Wrapper seguro para `consumer.poll()`.
+
+        - `wait_ready`: si es True espera a que haya asignación de particiones antes de hacer el poll.
+        - `wait_ready_timeout`: segundos máximos a esperar por la asignación (por defecto 3s).
+        Esto evita que llamadas que piden `wait_ready=True` bloqueen la aplicación durante largos periodos.
+        """
         if wait_ready:
-            if not self.wait_until_assigned(timeout=10):
+            if not self.wait_until_assigned(timeout=wait_ready_timeout):
                 log.error("❌ Timeout esperando inicialización y asignación del consumidor")
                 return {"status": "error", "message": "Timeout esperando asignación de particiones"}
 
@@ -633,8 +639,9 @@ class KafkaEventConsumer:
             return {"status": "error", "message": "No hay consumidor inicializado"}
 
         try:
-            consumer.poll(timeout_ms=timeout_ms)
-            return {"status": "ok", "message": "Polling realizado correctamente"}
+            # Hacemos el poll real y devolvemos el resultado bruto para compatibilidad
+            result = consumer.poll(timeout_ms=timeout_ms)
+            return {"status": "ok", "message": "Polling realizado correctamente", "result": result}
         except AssertionError as e:
             log.error(f"❌ Poll falló: {e}")
             return  {"status": "error", "message": str(e)}  
