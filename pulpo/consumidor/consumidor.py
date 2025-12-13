@@ -171,7 +171,7 @@ class KafkaEventConsumer:
             return
 
         offsets = {
-            tp: OffsetAndMetadata(offset + 1, None)
+            tp: OffsetAndMetadata(offset + 1, None, "")
             for tp, offset in self._pending_offsets.items()
         }
 
