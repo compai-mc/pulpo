@@ -240,26 +240,6 @@ class KafkaEventConsumer:
 
         self._cleanup()
 
-    # ------------------------------------------------------------------
-    # POLL COMPATIBLE
-    # ------------------------------------------------------------------
-
-    def poll(self, timeout_ms: int = 1000):
-        """
-        Wrapper compatible con KafkaConsumer.poll()
-        Devuelve {TopicPartition: [ConsumerRecord, ...]}
-        """
-        with self._lock:
-            consumer = self._consumer
-
-        if not consumer or getattr(consumer, "_closed", True):
-            return {}
-
-        try:
-            return consumer.poll(timeout_ms=timeout_ms)
-        except Exception as e:
-            log.error(f"❌ Error en poll(): {e}", exc_info=True)
-            return {}
         
     # ------------------------------------------------------------------
     # CONTROL
@@ -279,6 +259,7 @@ class KafkaEventConsumer:
             daemon=True,
         )
         self._thread.start()
+        
 
     def stop(self):
         self._running = False
