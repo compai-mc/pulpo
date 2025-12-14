@@ -175,8 +175,15 @@ class KafkaEventConsumer:
             for tp, offset in self._pending_offsets.items()
         }
 
+        if not offsets:
+            return
+
         try:
             consumer.commit(offsets=offsets)
+            # Log de commits exitosos
+            offset_info = ", ".join([f"{tp.topic}[{tp.partition}]@{offset+1}" 
+                                     for tp, offset in self._pending_offsets.items()])
+            log.debug(f"✅ Commit OK: {offset_info}")
             self._pending_offsets.clear()
             self._last_commit_time = time.time()
         except CommitFailedError:
