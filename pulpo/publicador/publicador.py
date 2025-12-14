@@ -397,8 +397,8 @@ class KafkaEventPublisher:
                             )
                         
                         if not is_connected:
-                            # WARNING en vez de ERROR ya que el productor puede funcionar igualmente
-                            log.warning("[KafkaEventPublisher] 🏥 Health check: bootstrap_connected() reporta desconexión (puede ser falso positivo)")
+                            # DEBUG en vez de WARNING ya que es común cuando está idle
+                            log.debug("[KafkaEventPublisher] 🏥 Health check: bootstrap_connected() reporta desconexión (puede ser falso positivo)")
                             self._metrics['health_check_failures'] += 1
                         else:
                             log.debug("[KafkaEventPublisher] 🏥 Health check OK")

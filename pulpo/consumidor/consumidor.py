@@ -91,6 +91,8 @@ class KafkaEventConsumer:
             enable_auto_commit=False,
             auto_offset_reset=self.auto_offset_reset,
             max_poll_interval_ms=self.max_poll_interval_ms,
+            session_timeout_ms=300000,  # 5 minutos - tiempo sin heartbeat antes de rebalance
+            heartbeat_interval_ms=10000,  # 10 segundos - frecuencia de heartbeat
             max_poll_records=1,
             value_deserializer=lambda m: m,
             key_deserializer=lambda k: k.decode() if k else None,
