@@ -223,9 +223,14 @@ class KafkaEventConsumer:
                     self._pending_offsets.clear()
                 finally:
                     self._lock.release()
-        except (KafkaError, Exception) as e:
-            log.error(f"❌ Error en commit: {e}")
-            # No limpiar offsets en error genérico, se reintentará
+
+        except Exception as e:
+            log.error(
+                "❌ Error en commit offsets "
+                f"(type={type(e).__name__}, repr={repr(e)})",
+                exc_info=True
+            )
+            # No limpiar offsets → se reintentará
 
     # ------------------------------------------------------------------
     # LOOP PRINCIPAL
