@@ -1,10 +1,13 @@
-# VERSION ARREGLADA Y ROBUSTA
-# - UN SOLO hilo hace poll()
-# - start() crea el consumer antes del hilo (sin race)
-# - poll() compatible con KafkaConsumer
-# - Reconexión con backoff
-# - Commit seguro
-# - DLQ persistente
+# VERSION PRODUCTION-READY
+# ✅ UN SOLO hilo hace poll()
+# ✅ Sin race conditions - locks con timeout en operaciones críticas
+# ✅ Heartbeat durante retries y callbacks largos
+# ✅ Reconexión automática con backoff exponencial
+# ✅ Commits seguros con manejo de rebalance
+# ✅ DLQ asíncrono sin bloqueos
+# ✅ Cleanup defensivo con timeouts
+# ✅ Validación de thread zombie
+# ✅ Health check para monitoreo
 
 import threading
 import json
@@ -63,6 +66,7 @@ class KafkaEventConsumer:
         self._dlq_producer: Optional[KafkaProducer] = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._shutdown_event = threading.Event()
         self._lock = threading.Lock()
 
         self._pending_offsets: Dict[TopicPartition, int] = {}
@@ -91,8 +95,9 @@ class KafkaEventConsumer:
             enable_auto_commit=False,
             auto_offset_reset=self.auto_offset_reset,
             max_poll_interval_ms=self.max_poll_interval_ms,
-            session_timeout_ms=300000,  # 5 minutos - tiempo sin heartbeat antes de rebalance
-            heartbeat_interval_ms=10000,  # 10 segundos - frecuencia de heartbeat
+            session_timeout_ms=60000,  # 60s - tiempo sin heartbeat antes de rebalance
+            heartbeat_interval_ms=3000,  # 3s - frecuencia de heartbeat (1/3 session)
+            request_timeout_ms=70000,  # 70s - timeout de requests individuales
             max_poll_records=1,
             value_deserializer=lambda m: m,
             key_deserializer=lambda k: k.decode() if k else None,
@@ -115,7 +120,7 @@ class KafkaEventConsumer:
         except Exception:
             return raw.decode(errors="ignore")
 
-    def _process_with_retry(self, msg) -> bool:
+    def _process_with_retry(self, msg, consumer) -> bool:
         data = msg if self.pass_raw_message else self._deserialize(msg.value)
 
         for attempt in range(1, self.max_retries + 1):
@@ -130,7 +135,18 @@ class KafkaEventConsumer:
                 self.metrics["processing_errors"][type(e).__name__] += 1
 
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_backoff_ms / 1000)
+                    # Heartbeat durante retry para no perder conexión
+                    backoff = self.retry_backoff_ms / 1000
+                    elapsed = 0
+                    while elapsed < backoff and self._running:
+                        try:
+                            if consumer and not getattr(consumer, "_closed", True):
+                                consumer.poll(timeout_ms=0)
+                        except Exception:
+                            pass
+                        sleep_chunk = min(1.0, backoff - elapsed)
+                        time.sleep(sleep_chunk)
+                        elapsed += sleep_chunk
                 else:
                     self.metrics["messages_failed"] += 1
                     if self.enable_dlq:
@@ -140,21 +156,31 @@ class KafkaEventConsumer:
     def _send_to_dlq(self, msg, data, error):
         try:
             self._create_dlq_producer()
-            self._dlq_producer.send(
+            
+            # Serializar data de forma segura
+            try:
+                safe_data = str(data) if not isinstance(data, (str, int, float, bool, type(None))) else data
+            except Exception:
+                safe_data = "<no serializable>"
+            
+            # Envío asíncrono sin flush para no bloquear
+            future = self._dlq_producer.send(
                 self.dlq_topic,
                 value={
                     "topic": msg.topic,
                     "partition": msg.partition,
                     "offset": msg.offset,
-                    "data": data,
+                    "data": safe_data,
                     "error": str(error),
+                    "error_type": type(error).__name__,
                     "ts": datetime.utcnow().isoformat(),
                 },
             )
-            self._dlq_producer.flush()
+            # Callback opcional para verificar errores (no bloquea)
+            future.add_errback(lambda e: log.error(f"Error enviando a DLQ: {e}"))
             self.metrics["messages_sent_to_dlq"] += 1
         except Exception as e:
-            log.error(f"DLQ error: {e}")
+            log.error(f"DLQ error: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
     # COMMITS
@@ -166,31 +192,53 @@ class KafkaEventConsumer:
         return (time.time() - self._last_commit_time) * 1000 >= self.commit_interval_ms
 
     def _commit_offsets(self):
-        with self._lock:
+        acquired = self._lock.acquire(timeout=2.0)
+        if not acquired:
+            log.warning("⚠️ Timeout adquiriendo lock para commit, saltando")
+            return
+        
+        try:
             consumer = self._consumer
+            offsets = dict(self._pending_offsets)
+        finally:
+            self._lock.release()
 
         if not consumer or getattr(consumer, "_closed", True):
             return
 
-        offsets = {
-            tp: OffsetAndMetadata(offset + 1, "", -1)
-            for tp, offset in self._pending_offsets.items()
+        commit_data = {
+            tp: OffsetAndMetadata(offset + 1, None, None)
+            for tp, offset in offsets.items()
         }
 
-        if not offsets:
+        if not commit_data:
             return
 
         try:
-            consumer.commit(offsets=offsets)
-            # Log de commits exitosos
+            consumer.commit(offsets=commit_data)
             offset_info = ", ".join([f"{tp.topic}[{tp.partition}]@{offset+1}" 
-                                     for tp, offset in self._pending_offsets.items()])
+                                     for tp, offset in offsets.items()])
             log.debug(f"✅ Commit OK: {offset_info}")
-            self._pending_offsets.clear()
-            self._last_commit_time = time.time()
+            
+            # Limpiar pending_offsets CON lock
+            acquired = self._lock.acquire(timeout=1.0)
+            if acquired:
+                try:
+                    self._pending_offsets.clear()
+                    self._last_commit_time = time.time()
+                finally:
+                    self._lock.release()
         except CommitFailedError:
             log.warning("Rebalance detectado, limpiando offsets pendientes")
-            self._pending_offsets.clear()
+            acquired = self._lock.acquire(timeout=1.0)
+            if acquired:
+                try:
+                    self._pending_offsets.clear()
+                finally:
+                    self._lock.release()
+        except (KafkaError, Exception) as e:
+            log.error(f"❌ Error en commit: {e}")
+            # No limpiar offsets en error genérico, se reintentará
 
     # ------------------------------------------------------------------
     # LOOP PRINCIPAL
@@ -202,20 +250,29 @@ class KafkaEventConsumer:
 
         while self._running:
             try:
-                with self._lock:
+                # Usar timeout en lock para evitar deadlock
+                acquired = self._lock.acquire(timeout=1.0)
+                if not acquired:
+                    log.warning("⚠️ Timeout adquiriendo lock en loop")
+                    continue
+                
+                try:
                     consumer = self._consumer
+                finally:
+                    self._lock.release()
 
                 if not consumer or getattr(consumer, "_closed", True):
                     log.warning("⚠️ Consumer no disponible, esperando...")
-                    time.sleep(1)
+                    self._shutdown_event.wait(1)
                     continue
 
-                # Poll con protección de excepciones
+                # Poll con timeout reducido para responder rápido a shutdown
+                poll_timeout = 500 if self._running else 100
                 try:
-                    records = consumer.poll(timeout_ms=1000)
+                    records = consumer.poll(timeout_ms=poll_timeout)
                 except Exception as poll_err:
                     log.error(f"❌ Error en poll: {poll_err}")
-                    time.sleep(1)
+                    self._shutdown_event.wait(1)
                     continue
                     
                 if not records:
@@ -224,16 +281,35 @@ class KafkaEventConsumer:
                 reconnect_attempts = 0
 
                 for tp, msgs in records.items():
+                    if not self._running:
+                        break
+                        
                     for msg in msgs:
+                        if not self._running:
+                            break
+                        
+                        # ❤️ Poll de vida - mantiene heartbeat durante procesamiento lento
+                        if consumer and not getattr(consumer, "_closed", True):
+                            try:
+                                consumer.poll(timeout_ms=0)
+                            except Exception:
+                                pass
+                            
                         start_time = time.time()
-                        ok = self._process_with_retry(msg)
+                        ok = self._process_with_retry(msg, consumer)
                         elapsed = time.time() - start_time
                         
                         # Advertir si callback es muy largo
                         if elapsed > WARNING_CALLBACK_SLOW_SEG:
                             log.warning(f"⏱️ Callback largo: {elapsed:.1f}s para offset {msg.offset}")
                         
-                        self._pending_offsets[tp] = msg.offset
+                        # Actualizar offset CON protección
+                        acquired = self._lock.acquire(timeout=0.5)
+                        if acquired:
+                            try:
+                                self._pending_offsets[tp] = msg.offset
+                            finally:
+                                self._lock.release()
 
                         if ok and self._should_commit():
                             self._commit_offsets()
@@ -248,34 +324,53 @@ class KafkaEventConsumer:
 
                 backoff = min(2 ** reconnect_attempts, 30)
                 log.info(f"🔄 Reconectando en {backoff}s...")
-                time.sleep(backoff)
+                self._shutdown_event.wait(backoff)
 
-                # Cerrar consumer viejo
-                with self._lock:
+                if not self._running:
+                    break
+
+                # Cerrar consumer viejo con timeout
+                acquired = self._lock.acquire(timeout=2.0)
+                if acquired:
                     try:
-                        if self._consumer:
-                            self._consumer.close()
-                    except Exception:
-                        pass
-                    self._consumer = None
+                        old_consumer = self._consumer
+                        self._consumer = None
+                    finally:
+                        self._lock.release()
+                    
+                    # Cerrar FUERA del lock
+                    if old_consumer:
+                        try:
+                            old_consumer.close()
+                        except Exception as close_err:
+                            log.warning(f"Error cerrando consumer: {close_err}")
                 
                 # Crear nuevo consumer FUERA del lock
                 try:
                     new_consumer = self._create_consumer()
-                    with self._lock:
-                        self._consumer = new_consumer
-                    log.info("✅ Consumidor recreado")
+                    
+                    acquired = self._lock.acquire(timeout=2.0)
+                    if acquired:
+                        try:
+                            self._consumer = new_consumer
+                        finally:
+                            self._lock.release()
+                        log.info("✅ Consumidor recreado")
+                    else:
+                        log.error("❌ No se pudo asignar nuevo consumer (timeout lock)")
+                        new_consumer.close()
+                        continue
                     
                     # Esperar asignación de particiones
                     if not self.wait_until_assigned(timeout=10):
                         log.warning("⚠️ Timeout esperando asignación tras reconexión")
                 except Exception as create_err:
                     log.error(f"❌ Error creando consumer: {create_err}")
-                    time.sleep(5)
+                    self._shutdown_event.wait(5)
 
             except Exception as e:
                 log.error(f"Error inesperado: {e}", exc_info=True)
-                time.sleep(1)
+                self._shutdown_event.wait(1)
 
         self._cleanup()
 
@@ -285,15 +380,32 @@ class KafkaEventConsumer:
     # ------------------------------------------------------------------
 
     def start(self):
-        if self._running:
+        # Validar que realmente está running (thread vivo)
+        if self._running and self._thread and self._thread.is_alive():
+            log.warning(f"[{self.group_id}] Consumidor ya está corriendo")
             return
+        
+        # Si estaba marcado como running pero thread murió, limpiar
+        if self._running:
+            log.warning(f"[{self.group_id}] Thread muerto detectado, reiniciando...")
+            self._running = False
 
+        self._shutdown_event.clear()
+        
         # Crear consumer FUERA del lock para no bloquear
         log.info(f"[{self.group_id}] Creando consumidor...")
         new_consumer = self._create_consumer()
         
-        with self._lock:
+        acquired = self._lock.acquire(timeout=5.0)
+        if not acquired:
+            log.error("❌ Timeout adquiriendo lock en start()")
+            new_consumer.close()
+            raise TimeoutError("No se pudo iniciar consumidor (lock timeout)")
+        
+        try:
             self._consumer = new_consumer
+        finally:
+            self._lock.release()
 
         self._running = True
         self._thread = threading.Thread(
@@ -306,17 +418,52 @@ class KafkaEventConsumer:
         
 
     def stop(self):
+        log.info(f"[{self.group_id}] Deteniendo consumidor...")
         self._running = False
+        self._shutdown_event.set()  # Despertar cualquier wait
+        
         if self._thread:
-            self._thread.join(10)
+            self._thread.join(timeout=10)
+            if self._thread.is_alive():
+                log.warning(f"⚠️ Thread consumidor aún vivo tras 10s")
 
     def _cleanup(self):
+        log.info(f"[{self.group_id}] Iniciando cleanup...")
+        
+        # Commit final con timeout
         if self._pending_offsets:
-            self._commit_offsets()
+            try:
+                self._commit_offsets()
+            except Exception as e:
+                log.error(f"Error en commit final: {e}")
+        
+        # Cerrar consumer - puede tardar, pero es necesario
         if self._consumer:
-            self._consumer.close()
+            try:
+                log.debug("Cerrando consumer...")
+                start = time.time()
+                self._consumer.close()
+                elapsed = time.time() - start
+                if elapsed > 3:
+                    log.warning(f"⚠️ Consumer.close() tardó {elapsed:.1f}s")
+                else:
+                    log.debug(f"Consumer cerrado en {elapsed:.1f}s")
+            except Exception as e:
+                log.error(f"Error cerrando consumer: {e}")
+            finally:
+                self._consumer = None
+        
+        # Cerrar DLQ producer
         if self._dlq_producer:
-            self._dlq_producer.close()
+            try:
+                self._dlq_producer.flush(timeout=3)
+                self._dlq_producer.close(timeout=5)
+            except Exception as e:
+                log.error(f"Error cerrando DLQ producer: {e}")
+            finally:
+                self._dlq_producer = None
+        
+        log.info(f"[{self.group_id}] Cleanup completado")
 
     # ------------------------------------------------------------------
     # POLL COMPATIBLE
@@ -333,8 +480,17 @@ class KafkaEventConsumer:
                 self.metrics["poll_errors"] += 1
                 return {}
 
-        with self._lock:
+        # Usar timeout en lock para evitar bloqueo
+        acquired = self._lock.acquire(timeout=2.0)
+        if not acquired:
+            log.warning("⚠️ Timeout adquiriendo lock en poll()")
+            self.metrics["poll_errors"] += 1
+            return {}
+        
+        try:
             consumer = self._consumer
+        finally:
+            self._lock.release()
 
         if not consumer or getattr(consumer, "_closed", True):
             return {}
@@ -350,16 +506,21 @@ class KafkaEventConsumer:
         """Espera hasta que el consumidor tenga particiones asignadas."""
         start = time.time()
         while time.time() - start < timeout:
-            with self._lock:
-                consumer = self._consumer
-            if consumer:
+            # Lectura directa sin lock (asignación es atómica)
+            consumer = self._consumer
+            
+            if consumer and not getattr(consumer, "_closed", True):
                 try:
                     assignment = consumer.assignment()
                     if assignment:
                         return True
                 except Exception:
                     pass
-            time.sleep(0.2)
+            
+            # Usar event con timeout para responder a shutdown
+            if self._shutdown_event.wait(0.2):
+                return False
+                
         return False
 
     def get_metrics(self):
@@ -370,4 +531,31 @@ class KafkaEventConsumer:
         Indica si el consumidor está activo.
         API pública usada por gestor_tareas.
         """
-        return bool(self._running)
+        return bool(self._running and self._thread and self._thread.is_alive())
+    
+    def health_check(self) -> Dict:
+        """
+        Retorna el estado de salud del consumidor para monitoreo.
+        """
+        consumer = self._consumer
+        
+        # Leer pending_offsets con lock
+        acquired = self._lock.acquire(timeout=0.5)
+        if acquired:
+            try:
+                pending_count = len(self._pending_offsets)
+            finally:
+                self._lock.release()
+        else:
+            pending_count = -1  # Indica que no se pudo leer
+        
+        return {
+            "running": self.is_running(),
+            "thread_alive": self._thread.is_alive() if self._thread else False,
+            "consumer_exists": consumer is not None,
+            "consumer_closed": getattr(consumer, "_closed", True) if consumer else True,
+            "pending_offsets": pending_count,
+            "topic": self.topic,
+            "group_id": self.group_id,
+            "metrics": self.get_metrics(),
+        }

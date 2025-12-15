@@ -123,11 +123,20 @@ class KafkaEventPublisher:
         self._health_check_thread: Optional[threading.Thread] = None
         self._stop_health_check = threading.Event()
         
+        # Topic creation cache (thread-safe set)
+        self._created_topics = set()
+        self._topics_lock = threading.Lock()
+        
         log.info(f"[KafkaEventPublisher] 📝 Inicializado con broker={broker}, timeout={send_timeout_ms}ms")
 
     def start(self):
         """Inicia el productor de Kafka con configuración robusta."""
-        with self._lock:
+        acquired = self._lock.acquire(timeout=10.0)
+        if not acquired:
+            log.error("[KafkaEventPublisher] ❌ Timeout adquiriendo lock en start()")
+            raise TimeoutError("No se pudo iniciar productor (lock timeout)")
+        
+        try:
             if self._producer is not None:
                 log.warning("[KafkaEventPublisher] ⚠️ El productor ya está iniciado")
                 return
@@ -168,6 +177,8 @@ class KafkaEventPublisher:
                 log.error(f"[KafkaEventPublisher] ❌ Error al iniciar productor: {e}\n{tb}")
                 self._producer = None
                 raise
+        finally:
+            self._lock.release()
 
     def stop(self, timeout: int = 30):
         """
@@ -176,38 +187,56 @@ class KafkaEventPublisher:
         Args:
             timeout: Tiempo máximo en segundos para esperar el flush
         """
-        with self._lock:
+        log.info("[KafkaEventPublisher] 🔄 Iniciando shutdown...")
+        
+        # Detener health check PRIMERO, FUERA del lock
+        self._stop_health_check.set()
+        if self._health_check_thread and self._health_check_thread.is_alive():
+            self._health_check_thread.join(timeout=5)
+            if self._health_check_thread.is_alive():
+                log.warning("[KafkaEventPublisher] ⚠️ Health check thread aún vivo")
+        
+        # Obtener referencia al producer y marcarlo como cerrado
+        acquired = self._lock.acquire(timeout=5.0)
+        if not acquired:
+            log.error("[KafkaEventPublisher] ❌ Timeout adquiriendo lock en stop()")
+            return
+        
+        try:
             if self._producer is None:
                 log.info("[KafkaEventPublisher] ℹ️ El productor ya estaba detenido")
                 return
             
-            try:
-                self._closed = True
-                
-                # Detener health check
-                self._stop_health_check.set()
-                if self._health_check_thread and self._health_check_thread.is_alive():
-                    self._health_check_thread.join(timeout=5)
-                
-                log.info("[KafkaEventPublisher] 🔄 Flushing mensajes pendientes...")
-                self._producer.flush(timeout=timeout)
-                log.info("[KafkaEventPublisher] ✅ Flush completado")
-                
-                # Log métricas finales
-                self._log_metrics()
-                
-            except KafkaTimeoutError:
-                log.error(f"[KafkaEventPublisher] ⏰ Timeout ({timeout}s) al hacer flush")
-            except Exception as e:
-                log.error(f"[KafkaEventPublisher] ❌ Error al detener productor: {e}")
-            finally:
-                try:
-                    self._producer.close(timeout=5)
-                except Exception as e:
-                    log.error(f"[KafkaEventPublisher] ⚠️ Error al cerrar productor: {e}")
-                
-                self._producer = None
-                log.info("[KafkaEventPublisher] 🔌 Productor detenido")
+            self._closed = True
+            producer_to_close = self._producer
+            self._producer = None
+        finally:
+            self._lock.release()
+        
+        # Flush y close FUERA del lock para no bloquear otros threads
+        try:
+            log.info("[KafkaEventPublisher] 🔄 Flushing mensajes pendientes...")
+            start_flush = time.time()
+            producer_to_close.flush(timeout=timeout)
+            flush_time = time.time() - start_flush
+            log.info(f"[KafkaEventPublisher] ✅ Flush completado en {flush_time:.1f}s")
+            
+        except KafkaTimeoutError:
+            log.error(f"[KafkaEventPublisher] ⏰ Timeout ({timeout}s) al hacer flush")
+        except Exception as e:
+            log.error(f"[KafkaEventPublisher] ❌ Error en flush: {e}")
+        
+        # Cerrar producer
+        try:
+            start_close = time.time()
+            producer_to_close.close(timeout=5)
+            close_time = time.time() - start_close
+            log.info(f"[KafkaEventPublisher] 🔌 Productor cerrado en {close_time:.1f}s")
+        except Exception as e:
+            log.error(f"[KafkaEventPublisher] ⚠️ Error al cerrar productor: {e}")
+        
+        # Log métricas finales
+        self._log_metrics()
 
     def is_closed(self) -> bool:
         """Verifica si el productor está cerrado."""
@@ -228,10 +257,24 @@ class KafkaEventPublisher:
         """
         if self.is_closed():
             log.error("[KafkaEventPublisher] ❌ El productor está cerrado. Llama a start() antes de publicar")
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['send_failed'] += 1
+                finally:
+                    self._lock.release()
             return False
 
-        # Auto-crear tópico si no existe
-        crear_topico(self.broker, topic)
+        # Auto-crear tópico si no existe (con cache thread-safe)
+        if topic not in self._created_topics:
+            acquired = self._topics_lock.acquire(timeout=2.0)
+            if acquired:
+                try:
+                    if topic not in self._created_topics:
+                        crear_topico(self.broker, topic)
+                        self._created_topics.add(topic)
+                finally:
+                    self._topics_lock.release()
 
         # Determinar key: parámetro > job_id del mensaje > None
         if key is None:
@@ -252,8 +295,36 @@ class KafkaEventPublisher:
                     value=message
                 )
             
-            # Esperar confirmación con timeout
-            result = future.get(timeout=self.send_timeout_ms / 1000.0)
+            # Esperar confirmación con timeout, verificando periódicamente si sigue vivo
+            total_timeout = self.send_timeout_ms / 1000.0
+            start_time = time.time()
+            
+            while True:
+                # Verificar si el productor fue cerrado
+                if self.is_closed():
+                    log.error(f"❌ Productor cerrado mientras esperaba confirmación para '{topic}'")
+                    return False
+                
+                # Esperar en chunks de 1 segundo
+                elapsed = time.time() - start_time
+                remaining = total_timeout - elapsed
+                
+                if remaining <= 0:
+                    log.error(f"⏰ Timeout ({total_timeout}s) esperando confirmación para '{topic}'")
+                    return False
+                
+                chunk_timeout = min(1.0, remaining)
+                
+                try:
+                    result = future.get(timeout=chunk_timeout)
+                    # Éxito
+                    break
+                except (KafkaTimeoutError, TimeoutError):
+                    # Timeout del chunk - continuar esperando
+                    continue
+                except Exception:
+                    # Cualquier otro error - propagar
+                    raise
             
             with self._lock:
                 self._metrics['messages_sent'] += 1
@@ -266,7 +337,12 @@ class KafkaEventPublisher:
             return True
             
         except MessageSizeTooLargeError as e:
-            self._metrics['error_message_too_large'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_message_too_large'] += 1
+                finally:
+                    self._lock.release()
             log.error(
                 f"❌ Mensaje demasiado grande para '{topic}': {e}. "
                 f"Tamaño máximo: {self.max_request_size} bytes"
@@ -274,27 +350,52 @@ class KafkaEventPublisher:
             return False
             
         except KafkaTimeoutError as e:
-            self._metrics['error_timeout'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_timeout'] += 1
+                finally:
+                    self._lock.release()
             log.error(f"⏰ Timeout ({self.send_timeout_ms}ms) publicando en '{topic}': {e}")
             return False
             
         except RequestTimedOutError as e:
-            self._metrics['error_request_timeout'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_request_timeout'] += 1
+                finally:
+                    self._lock.release()
             log.error(f"⏰ Request timeout publicando en '{topic}': {e}")
             return False
             
         except NoBrokersAvailable as e:
-            self._metrics['error_no_brokers'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_no_brokers'] += 1
+                finally:
+                    self._lock.release()
             log.error(f"❌ No hay brokers disponibles para '{topic}': {e}")
             return False
             
         except KafkaError as e:
-            self._metrics['error_kafka'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_kafka'] += 1
+                finally:
+                    self._lock.release()
             log.error(f"❌ Error Kafka publicando en '{topic}': {e}", exc_info=True)
             return False
             
         except Exception as e:
-            self._metrics['error_unknown'] += 1
+            acquired = self._lock.acquire(timeout=0.1)
+            if acquired:
+                try:
+                    self._metrics['error_unknown'] += 1
+                finally:
+                    self._lock.release()
             log.error(f"❌ Error desconocido publicando en '{topic}': {e}", exc_info=True)
             return False
 
@@ -318,12 +419,25 @@ class KafkaEventPublisher:
         success = self.publish(topic, message, key)
         
         if success:
+            # Obtener producer sin mantener lock durante flush
+            acquired = self._lock.acquire(timeout=1.0)
+            if not acquired:
+                log.error(f"❌ Timeout adquiriendo lock para flush en '{topic}'")
+                return False
+            
             try:
-                with self._lock:
-                    if self._producer:
-                        self._producer.flush(timeout=5)
-                        log.info(f"✅ Mensaje 'transaccional' confirmado en '{topic}' key={key}")
-                        return True
+                producer = self._producer
+            finally:
+                self._lock.release()
+            
+            if not producer:
+                log.error(f"❌ Productor no disponible para flush en '{topic}'")
+                return False
+            
+            try:
+                producer.flush(timeout=5)
+                log.info(f"✅ Mensaje 'transaccional' confirmado en '{topic}' key={key}")
+                return True
             except KafkaTimeoutError:
                 log.error(f"⏰ Timeout en flush para '{topic}'")
                 return False
@@ -334,14 +448,22 @@ class KafkaEventPublisher:
         return False
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Retorna métricas actuales del productor."""
-        with self._lock:
+        """Retorna métricas actuales del productor (copia inmutable)."""
+        acquired = self._lock.acquire(timeout=1.0)
+        if not acquired:
+            return {'error': 'timeout_reading_metrics'}
+        
+        try:
+            # Crear copia profunda para evitar modificaciones externas
+            metrics_copy = dict(self._metrics)
             return {
-                **dict(self._metrics),
+                **metrics_copy,
                 'last_send_time': self._last_send_time,
                 'is_closed': self._closed,
                 'broker': self.broker
             }
+        finally:
+            self._lock.release()
 
     def _log_metrics(self):
         """Log de métricas para debugging."""
@@ -357,6 +479,11 @@ class KafkaEventPublisher:
     def _start_health_check_thread(self):
         """Inicia hilo de health check en background."""
         if self.health_check_interval <= 0:
+            return
+        
+        # Verificar que no haya thread previo vivo
+        if self._health_check_thread and self._health_check_thread.is_alive():
+            log.warning("[KafkaEventPublisher] ⚠️ Health check thread ya está corriendo")
             return
         
         self._stop_health_check.clear()
@@ -377,7 +504,13 @@ class KafkaEventPublisher:
                 if self._stop_health_check.is_set():
                     break
                 
-                with self._lock:
+                # Usar timeout en lock para no bloquear health check
+                acquired = self._lock.acquire(timeout=2.0)
+                if not acquired:
+                    log.debug("[KafkaEventPublisher] 🏥 Health check: timeout en lock, saltando")
+                    continue
+                
+                try:
                     if self._producer is None or self._closed:
                         log.warning("[KafkaEventPublisher] 🏥 Health check: productor no disponible")
                         continue
@@ -410,8 +543,10 @@ class KafkaEventPublisher:
                     except Exception as e:
                         log.warning(f"[KafkaEventPublisher] 🏥 Health check error (no crítico): {e}")
                         self._metrics['health_check_failures'] += 1
-                
-                self._last_health_check = time.time()
+                    
+                    self._last_health_check = time.time()
+                finally:
+                    self._lock.release()
                 
             except Exception as e:
                 log.error(f"[KafkaEventPublisher] ❌ Error en health check loop: {e}")
