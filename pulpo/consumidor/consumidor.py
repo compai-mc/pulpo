@@ -198,7 +198,10 @@ class KafkaEventConsumer:
         if not consumer or getattr(consumer, "_closed", True):
             return
 
-        # OffsetAndMetadata solo requiere (offset, metadata) en kafka-python
+        log.error(f"OffsetAndMetadata class: {OffsetAndMetadata}")
+        log.error(f"OffsetAndMetadata module: {OffsetAndMetadata.__module__}")
+        log.error(f"OffsetAndMetadata mro: {OffsetAndMetadata.__mro__}")
+        
         commit_data = {
             tp: OffsetAndMetadata(
                     offset=offset + 1,
