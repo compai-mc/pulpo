@@ -9,10 +9,9 @@ from datetime import datetime
 from collections import defaultdict
 
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
-from kafka.errors import (
-    KafkaError,
-    CommitFailedError,
-)
+from kafka.structs import OffsetAndMetadata
+from kafka.errors import CommitFailedError, KafkaError
+import time
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
@@ -182,32 +181,48 @@ class KafkaEventConsumer:
             return True
         return (time.time() - self._last_commit_time) * 1000 >= self.commit_interval_ms
 
+
     def _commit_offsets(self):
+        # 1️⃣ Tomar snapshot de offsets bajo lock
         acquired = self._lock.acquire(timeout=2.0)
         if not acquired:
             log.warning("⚠️ Timeout adquiriendo lock para commit, saltando")
             return
-        
+
         try:
             consumer = self._consumer
             offsets = dict(self._pending_offsets)
         finally:
             self._lock.release()
 
+        # 2️⃣ Validaciones básicas
         if not consumer or getattr(consumer, "_closed", True):
             return
 
         if not offsets:
             return
 
+        # 3️⃣ Construir commit_data correctamente (OBLIGATORIO)
+        commit_data = {
+            tp: OffsetAndMetadata(
+                offset + 1,  # Kafka espera el siguiente offset
+                "",          # metadata (string, no None)
+                -1           # leader_epoch (OBLIGATORIO en kafka-python)
+            )
+            for tp, offset in offsets.items()
+        }
+
         try:
-            # Pasar offsets directamente como enteros, sin OffsetAndMetadata
-            consumer.commit(offsets={tp: offset + 1 for tp, offset in offsets.items()})
-            offset_info = ", ".join([f"{tp.topic}[{tp.partition}]@{offset+1}" 
-                                     for tp, offset in offsets.items()])
+            # 4️⃣ Commit síncrono
+            consumer.commit(offsets=commit_data)
+
+            offset_info = ", ".join(
+                f"{tp.topic}[{tp.partition}]@{offset + 1}"
+                for tp, offset in offsets.items()
+            )
             log.debug(f"✅ Commit OK: {offset_info}")
-            
-            # Limpiar pending_offsets CON lock
+
+            # 5️⃣ Limpiar pending_offsets bajo lock
             acquired = self._lock.acquire(timeout=1.0)
             if acquired:
                 try:
@@ -215,8 +230,11 @@ class KafkaEventConsumer:
                     self._last_commit_time = time.time()
                 finally:
                     self._lock.release()
+
         except CommitFailedError:
-            log.warning("Rebalance detectado, limpiando offsets pendientes")
+            # Rebalance en curso → offsets ya no son válidos
+            log.warning("⚠️ Rebalance detectado durante commit, limpiando offsets pendientes")
+
             acquired = self._lock.acquire(timeout=1.0)
             if acquired:
                 try:
@@ -224,13 +242,22 @@ class KafkaEventConsumer:
                 finally:
                     self._lock.release()
 
-        except Exception as e:
+        except KafkaError as e:
             log.error(
-                "❌ Error en commit offsets "
+                f"❌ Error Kafka en commit offsets "
                 f"(type={type(e).__name__}, repr={repr(e)})",
                 exc_info=True
             )
-            # No limpiar offsets → se reintentará
+            # NO limpiar offsets → se reintentará
+
+        except Exception as e:
+            log.error(
+                f"❌ Error inesperado en commit offsets "
+                f"(type={type(e).__name__}, repr={repr(e)})",
+                exc_info=True
+            )
+            # NO limpiar offsets → se reintentará
+
 
     # ------------------------------------------------------------------
     # LOOP PRINCIPAL
