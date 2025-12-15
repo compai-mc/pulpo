@@ -100,8 +100,9 @@ class GestorTareas:
         self.db_retry_backoff_ms = db_retry_backoff_ms
         self.health_check_interval = health_check_interval
         
-        # Thread-safety para operaciones DB
+        # Thread-safety para operaciones DB y flags
         self._db_lock = threading.Lock()
+        self._state_lock = threading.Lock()  # Lock para _closed y producer_started
         self._closed = False
         
         # Métricas
@@ -165,21 +166,23 @@ class GestorTareas:
     def start(self):
         """Inicia productor, consumidor y health check."""
         try:
-            if not self.producer_started:
-                self.producer.start()
-                self.producer_started = True
-                log.info("[GestorTareas] ✅ Producer iniciado")
-                self._metrics['producer_starts'] += 1
+            with self._state_lock:
+                if not self.producer_started:
+                    self.producer.start()
+                    self.producer_started = True
+                    log.info("[GestorTareas] ✅ Producer iniciado")
+                    self._metrics['producer_starts'] += 1
 
-            if not self.consumer.is_running():
-                self.consumer.start()
-                log.info("[GestorTareas] ✅ Consumer iniciado")
-                self._metrics['consumer_starts'] += 1
+                if not self.consumer.is_running():
+                    self.consumer.start()
+                    log.info("[GestorTareas] ✅ Consumer iniciado")
+                    self._metrics['consumer_starts'] += 1
+                
+                self._closed = False
             
-            # Iniciar health check
+            # Iniciar health check (fuera del lock)
             self._start_health_check_thread()
             
-            self._closed = False
             log.info("[GestorTareas] 🚀 GestorTareas completamente iniciado")
             
         except Exception as e:
@@ -193,7 +196,8 @@ class GestorTareas:
         Args:
             timeout: Tiempo máximo en segundos para esperar
         """
-        self._closed = True
+        with self._state_lock:
+            self._closed = True
         
         # Detener health check
         self._stop_health_check.set()
@@ -210,13 +214,29 @@ class GestorTareas:
                 log.error(f"[GestorTareas] ❌ Error al parar consumer: {e}")
 
         # Detener producer
-        if self.producer_started:
+        with self._state_lock:
+            producer_was_started = self.producer_started
+            self.producer_started = False
+        
+        if producer_was_started:
             try:
                 self.producer.stop(timeout=timeout)
-                self.producer_started = False
                 log.info("[GestorTareas] ✅ Producer detenido")
             except Exception as e:
                 log.error(f"[GestorTareas] ❌ Error al parar producer: {e}")
+        
+        # Cerrar conexión ArangoDB
+        try:
+            # Cerrar referencias de DB
+            if hasattr(self, 'collection'):
+                del self.collection
+            if hasattr(self, 'db'):
+                del self.db
+            if hasattr(self, 'client'):
+                self.client.close()
+                log.info("[GestorTareas] 🗄️ Conexión ArangoDB cerrada")
+        except Exception as e:
+            log.error(f"[GestorTareas] ❌ Error cerrando ArangoDB: {e}")
         
         # Log métricas finales
         self._log_metrics()
@@ -245,7 +265,11 @@ class GestorTareas:
         def _add_job_operation():
             nonlocal nuevas_tareas
             
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en add_job (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 if self.collection.has(job_id):
                     job = self.collection.get(job_id)
                     existing_tasks = job.get("tasks", {})
@@ -283,6 +307,8 @@ class GestorTareas:
                     log.info(f"[GestorTareas] ✅ Job '{job_id}' creado con {len(nuevas_tareas)} tareas")
                 
                 self._last_db_operation = time.time()
+            finally:
+                self._db_lock.release()
 
         # Ejecutar con retry
         success = self._retry_db_operation(_add_job_operation, f"add_job(job_id={job_id})")
@@ -317,7 +343,11 @@ class GestorTareas:
         
         def _get_job_operation():
             nonlocal job
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en get_job (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 if not self.collection.has(job_id):
                     log.warning(f"[GestorTareas] ⚠️ No existe ningún documento con job_id '{job_id}'")
                     return
@@ -326,6 +356,8 @@ class GestorTareas:
                 self._metrics['jobs_retrieved'] += 1
                 self._last_db_operation = time.time()
                 log.debug(f"[GestorTareas] 📥 Job recuperado: {job_id}")
+            finally:
+                self._db_lock.release()
 
         success = self._retry_db_operation(_get_job_operation, f"get_job(job_id={job_id})")
         
@@ -350,7 +382,11 @@ class GestorTareas:
         
         def _update_task_operation():
             nonlocal success
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en update_task (job={job_id}, task={task_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job or task_id not in job.get("tasks", {}):
                     log.error(f"[GestorTareas] ❌ No se encontró la tarea '{task_id}' en el job '{job_id}'")
@@ -362,6 +398,8 @@ class GestorTareas:
                 self._last_db_operation = time.time()
                 log.info(f"[GestorTareas] ✅ Tarea '{task_id}' del job '{job_id}' actualizada")
                 success = True
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_update_task_operation, f"update_task(job={job_id}, task={task_id})")
         return success
@@ -385,7 +423,11 @@ class GestorTareas:
         
         def _update_job_operation():
             nonlocal success
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en update_job (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job:
                     log.error(f"[GestorTareas] ❌ No se encontró el job '{job_id}'")
@@ -397,6 +439,8 @@ class GestorTareas:
                 self._last_db_operation = time.time()
                 log.info(f"[GestorTareas] ✅ Job '{job_id}' actualizado")
                 success = True
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_update_job_operation, f"update_job(job_id={job_id})")
         return success
@@ -417,7 +461,11 @@ class GestorTareas:
         
         def _get_task_field_operation():
             nonlocal value
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en get_task_field (job={job_id}, task={task_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job:
                     return
@@ -425,6 +473,8 @@ class GestorTareas:
                 if task_id in tasks:
                     value = tasks[task_id].get(field)
                     self._last_db_operation = time.time()
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_get_task_field_operation, f"get_task_field(job={job_id}, task={task_id}, field={field})")
         return value
@@ -444,11 +494,17 @@ class GestorTareas:
         
         def _get_job_field_operation():
             nonlocal value
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en get_job_field (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if job:
                     value = job.get(field)
                     self._last_db_operation = time.time()
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_get_job_field_operation, f"get_job_field(job_id={job_id}, field={field})")
         return value
@@ -471,7 +527,11 @@ class GestorTareas:
         
         def _set_task_field_operation():
             nonlocal success
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en set_task_field (job={job_id}, task={task_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job:
                     log.error(f"[GestorTareas] ❌ Job '{job_id}' no encontrado para set_task_field")
@@ -488,6 +548,8 @@ class GestorTareas:
                 self._metrics['task_fields_set'] += 1
                 self._last_db_operation = time.time()
                 success = True
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_set_task_field_operation, f"set_task_field(job={job_id}, task={task_id}, field={field})")
         return success
@@ -508,7 +570,11 @@ class GestorTareas:
         
         def _set_job_field_operation():
             nonlocal success
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en set_job_field (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job:
                     log.error(f"[GestorTareas] ❌ Job '{job_id}' no encontrado para set_job_field")
@@ -519,6 +585,8 @@ class GestorTareas:
                 self._metrics['job_fields_set'] += 1
                 self._last_db_operation = time.time()
                 success = True
+            finally:
+                self._db_lock.release()
         
         self._retry_db_operation(_set_job_field_operation, f"set_job_field(job_id={job_id}, field={field})")
         return success
@@ -537,7 +605,10 @@ class GestorTareas:
         Returns:
             True si se publicó exitosamente, False en caso contrario
         """
-        if not self.producer_started:
+        with self._state_lock:
+            producer_started = self.producer_started
+        
+        if not producer_started:
             log.warning("[GestorTareas] ⚠️ Producer no iniciado, arrancando automáticamente...")
             try:
                 self.start()
@@ -596,19 +667,37 @@ class GestorTareas:
                 self.task_completed(job_id, task_id)
                 self._metrics['end_task_events'] += 1
             elif event_type == "end_job" and self.on_complete_callback:
-                try:
-                    self.on_complete_callback(job_id)
-                    self._metrics['job_callbacks_executed'] += 1
-                except Exception as e:
-                    log.error(f"[GestorTareas] ❌ Error en on_complete_callback: {e}")
-                    self._metrics['callback_errors'] += 1
+                # Ejecutar callback en thread separado para no bloquear el consumer
+                def _run_job_callback():
+                    try:
+                        self.on_complete_callback(job_id)
+                        self._metrics['job_callbacks_executed'] += 1
+                    except Exception as e:
+                        log.error(f"[GestorTareas] ❌ Error en on_complete_callback: {e}")
+                        self._metrics['callback_errors'] += 1
+                
+                callback_thread = threading.Thread(
+                    target=_run_job_callback,
+                    name=f"job-callback-{job_id}",
+                    daemon=True
+                )
+                callback_thread.start()
             elif event_type == "all_jobs_complete" and self.on_all_complete_callback:
-                try:
-                    self.on_all_complete_callback()
-                    self._metrics['all_complete_callbacks_executed'] += 1
-                except Exception as e:
-                    log.error(f"[GestorTareas] ❌ Error en on_all_complete_callback: {e}")
-                    self._metrics['callback_errors'] += 1
+                # Ejecutar callback en thread separado para no bloquear el consumer
+                def _run_all_callback():
+                    try:
+                        self.on_all_complete_callback()
+                        self._metrics['all_complete_callbacks_executed'] += 1
+                    except Exception as e:
+                        log.error(f"[GestorTareas] ❌ Error en on_all_complete_callback: {e}")
+                        self._metrics['callback_errors'] += 1
+                
+                callback_thread = threading.Thread(
+                    target=_run_all_callback,
+                    name="all-jobs-callback",
+                    daemon=True
+                )
+                callback_thread.start()
 
         except json.JSONDecodeError as e:
             log.error(f"[GestorTareas] ❌ Error decodificando JSON: {e}")
@@ -633,7 +722,11 @@ class GestorTareas:
         
         def _task_completed_operation():
             nonlocal all_completed
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en task_completed (job={job_id}, task={task_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 job = self.collection.get(job_id)
                 if not job or task_id not in job.get("tasks", {}):
                     log.error(f"[GestorTareas] ❌ No se encontró tarea '{task_id}' en job '{job_id}'")
@@ -649,20 +742,30 @@ class GestorTareas:
 
                 # Verificar si todas las tareas están completadas
                 all_completed = all(t.get("completed", False) for t in job["tasks"].values())
+            finally:
+                self._db_lock.release()
         
         success = self._retry_db_operation(_task_completed_operation, f"task_completed(job={job_id}, task={task_id})")
         
         if not success:
             return
         
-        # Callback (fuera del lock para evitar deadlocks)
+        # Callback en thread separado para no bloquear el consumer
         if self.on_task_complete_callback:
-            try:
-                self.on_task_complete_callback(job_id, task_id)
-                self._metrics['task_callbacks_executed'] += 1
-            except Exception as e:
-                log.error(f"[GestorTareas] ❌ Error en on_task_complete_callback: {e}")
-                self._metrics['callback_errors'] += 1
+            def _run_callback():
+                try:
+                    self.on_task_complete_callback(job_id, task_id)
+                    self._metrics['task_callbacks_executed'] += 1
+                except Exception as e:
+                    log.error(f"[GestorTareas] ❌ Error en on_task_complete_callback: {e}")
+                    self._metrics['callback_errors'] += 1
+            
+            callback_thread = threading.Thread(
+                target=_run_callback,
+                name=f"task-callback-{job_id}-{task_id}",
+                daemon=True
+            )
+            callback_thread.start()
 
         # Si todas completadas, procesar job completado
         if all_completed:
@@ -677,7 +780,11 @@ class GestorTareas:
             job_id: ID del job completado
         """
         def _job_completed_operation():
-            with self._db_lock:
+            if not self._db_lock.acquire(timeout=10):
+                log.error(f"[GestorTareas] ❌ Timeout obteniendo lock DB en job_completed (job_id={job_id})")
+                raise TimeoutError("Timeout obteniendo _db_lock")
+            
+            try:
                 # Recargar el job para obtener el nuevo _rev
                 job = self.collection.get(job_id)
                 if not job:
@@ -696,6 +803,8 @@ class GestorTareas:
                 self._metrics['jobs_completed'] += 1
                 self._last_db_operation = time.time()
                 log.info(f"[GestorTareas] 🎉 Job '{job_id}' completado")
+            finally:
+                self._db_lock.release()
         
         success = self._retry_db_operation(_job_completed_operation, f"job_completed(job_id={job_id})")
         
@@ -883,18 +992,25 @@ class GestorTareas:
         """Loop de health check periódico para ArangoDB y Kafka."""
         while not self._stop_health_check.is_set():
             try:
-                time.sleep(self.health_check_interval)
-                
-                if self._stop_health_check.is_set():
+                # Usar wait() con timeout en lugar de sleep() para responder rápido al shutdown
+                if self._stop_health_check.wait(timeout=self.health_check_interval):
+                    # Event fue seteado, salir inmediatamente
                     break
                 
                 # Health check de ArangoDB
                 try:
-                    with self._db_lock:
-                        # Verificar que la conexión esté viva
-                        self.db.version()
-                        self._metrics['health_check_db_success'] += 1
-                        log.debug("[GestorTareas] 🏥 Health check DB OK")
+                    # Usar timeout en lock para evitar bloqueo indefinido
+                    if self._db_lock.acquire(timeout=2):
+                        try:
+                            # Verificar que la conexión esté viva
+                            self.db.version()
+                            self._metrics['health_check_db_success'] += 1
+                            log.debug("[GestorTareas] 🏥 Health check DB OK")
+                        finally:
+                            self._db_lock.release()
+                    else:
+                        log.warning("[GestorTareas] 🏥 Health check DB: timeout obteniendo lock")
+                        self._metrics['health_check_db_lock_timeouts'] += 1
                 except ServerConnectionError as e:
                     log.error(f"[GestorTareas] 🏥 Health check DB FAILED: {e}")
                     self._metrics['health_check_db_failures'] += 1
@@ -904,7 +1020,10 @@ class GestorTareas:
                 
                 # Health check de Producer
                 try:
-                    if self.producer_started and not self.producer.is_closed():
+                    with self._state_lock:
+                        producer_started = self.producer_started
+                    
+                    if producer_started and not self.producer.is_closed():
                         self._metrics['health_check_producer_success'] += 1
                         log.debug("[GestorTareas] 🏥 Health check Producer OK")
                     else:
@@ -939,12 +1058,21 @@ class GestorTareas:
             True si todos los componentes están funcionando, False en caso contrario
         """
         try:
-            # Verificar DB
-            with self._db_lock:
-                self.db.version()
+            # Verificar DB con timeout
+            if self._db_lock.acquire(timeout=2):
+                try:
+                    self.db.version()
+                finally:
+                    self._db_lock.release()
+            else:
+                log.warning("[GestorTareas] ⚠️ is_healthy: timeout obteniendo lock DB")
+                return False
             
             # Verificar Producer
-            if self.producer_started and self.producer.is_closed():
+            with self._state_lock:
+                producer_started = self.producer_started
+            
+            if producer_started and self.producer.is_closed():
                 return False
             
             # Verificar Consumer
