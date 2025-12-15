@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="5.1.6",
+    version="5.1.7",
     packages=find_packages(),
     install_requires=[
         "requests", 

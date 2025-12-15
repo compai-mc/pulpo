@@ -9,7 +9,6 @@ from datetime import datetime
 from collections import defaultdict
 
 from kafka import KafkaConsumer, KafkaProducer, TopicPartition
-from kafka.structs import OffsetAndMetadata
 from kafka.errors import (
     KafkaError,
     CommitFailedError,
@@ -198,24 +197,12 @@ class KafkaEventConsumer:
         if not consumer or getattr(consumer, "_closed", True):
             return
 
-        log.error(f"OffsetAndMetadata class: {OffsetAndMetadata}")
-        log.error(f"OffsetAndMetadata module: {OffsetAndMetadata.__module__}")
-        log.error(f"OffsetAndMetadata mro: {OffsetAndMetadata.__mro__}")
-        
-        commit_data = {
-            tp: OffsetAndMetadata(
-                    offset=offset + 1,
-                    metadata="",
-                    leader_epoch=-1
-                )
-            for tp, offset in offsets.items()
-        }
-
-        if not commit_data:
+        if not offsets:
             return
 
         try:
-            consumer.commit(offsets=commit_data)
+            # Pasar offsets directamente como enteros, sin OffsetAndMetadata
+            consumer.commit(offsets={tp: offset + 1 for tp, offset in offsets.items()})
             offset_info = ", ".join([f"{tp.topic}[{tp.partition}]@{offset+1}" 
                                      for tp, offset in offsets.items()])
             log.debug(f"✅ Commit OK: {offset_info}")
