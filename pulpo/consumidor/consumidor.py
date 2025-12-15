@@ -207,7 +207,7 @@ class KafkaEventConsumer:
             return
 
         commit_data = {
-            tp: OffsetAndMetadata(offset + 1, None, None)
+            tp: OffsetAndMetadata(offset + 1, "")
             for tp, offset in offsets.items()
         }
 
