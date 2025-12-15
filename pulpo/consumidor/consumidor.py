@@ -1,13 +1,4 @@
-# VERSION PRODUCTION-READY
-# ✅ UN SOLO hilo hace poll()
-# ✅ Sin race conditions - locks con timeout en operaciones críticas
-# ✅ Heartbeat durante retries y callbacks largos
-# ✅ Reconexión automática con backoff exponencial
-# ✅ Commits seguros con manejo de rebalance
-# ✅ DLQ asíncrono sin bloqueos
-# ✅ Cleanup defensivo con timeouts
-# ✅ Validación de thread zombie
-# ✅ Health check para monitoreo
+
 
 import threading
 import json
@@ -17,7 +8,8 @@ from typing import Callable, Optional, Dict
 from datetime import datetime
 from collections import defaultdict
 
-from kafka import KafkaConsumer, KafkaProducer, TopicPartition, OffsetAndMetadata
+from kafka import KafkaConsumer, KafkaProducer, TopicPartition
+from kafka.structs import OffsetAndMetadata
 from kafka.errors import (
     KafkaError,
     CommitFailedError,
