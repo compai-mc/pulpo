@@ -202,7 +202,24 @@ class KafkaEventConsumer:
         if not offsets:
             return
 
-        # 3️⃣ Construir commit_data correctamente (OBLIGATORIO)
+        # 3️⃣ CRÍTICO: filtrar offsets inválidos (None o no int)
+        invalid_offsets = {
+            tp: offset
+            for tp, offset in offsets.items()
+            if not isinstance(offset, int)
+        }
+
+        if invalid_offsets:
+            log.error(
+                "❌ Offsets inválidos detectados, abortando commit: "
+                + ", ".join(
+                    f"{tp.topic}[{tp.partition}]={offset!r}"
+                    for tp, offset in invalid_offsets.items()
+                )
+            )
+            return
+
+        # 4️⃣ Construir commit_data correctamente
         commit_data = {
             tp: OffsetAndMetadata(
                 offset + 1,  # Kafka espera el siguiente offset
@@ -213,7 +230,7 @@ class KafkaEventConsumer:
         }
 
         try:
-            # 4️⃣ Commit síncrono
+            # 5️⃣ Commit síncrono
             consumer.commit(offsets=commit_data)
 
             offset_info = ", ".join(
@@ -222,7 +239,7 @@ class KafkaEventConsumer:
             )
             log.debug(f"✅ Commit OK: {offset_info}")
 
-            # 5️⃣ Limpiar pending_offsets bajo lock
+            # 6️⃣ Limpiar pending_offsets bajo lock
             acquired = self._lock.acquire(timeout=1.0)
             if acquired:
                 try:
