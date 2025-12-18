@@ -791,12 +791,14 @@ class GestorTareas:
                     log.error(f"[GestorTareas] ❌ Job '{job_id}' no encontrado en job_completed")
                     return
 
-                # Marcar la historia con interpretado a done
+                # Marcar la historia con interpretado y a done
                 historia = job.get("metadata", {})
                 if "clasificacion" in historia and "status" in historia["clasificacion"]:
                     historia \
                         .setdefault("clasificacion", {}) \
                         .setdefault("status", {})[estado_tarea["INTERPRETADO"]] = "done"
+                else:
+                    log.error(f"❌ historia->clasificacion->status no encontraadda  '{job_id}' para marcar como interpret-done")
 
                 # Actualizar la historia en base de datos
                 self.collection.update(job)
