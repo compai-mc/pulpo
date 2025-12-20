@@ -46,6 +46,7 @@ ARANGO_USER = require_env("ARANGO_USER")
 ARANGO_PASSWORD = require_env("ARANGO_PASSWORD")
 ARANGO_COLLECTION = require_env("ARANGO_COLLECTION_TAREAS")
 TOPIC_TASK_EVENTS = require_env("TOPIC_TASK_EVENTS")
+GT_MAX_POLL_INTERVAL_MS = int(require_env("GT_MAX_POLL_INTERVAL_MS"))
 
 DLQ_CONSUMER = require_env("DLQ_CONSUMER")
 DLQ_COMPAI = require_env("DLQ_COMPAI")
@@ -147,6 +148,9 @@ class GestorTareas:
             topic=TOPIC_TASK_EVENTS,
             callback=self._on_kafka_message,
             group_id=group_id,
+            max_poll_interval_ms=GT_MAX_POLL_INTERVAL_MS,
+            enable_dlq=True,
+            dlq_topic=DLQ_CONSUMER
         )
         log.info(f"[GestorTareas] 📬 Consumer configurado para topic: {TOPIC_TASK_EVENTS}")
 
@@ -845,8 +849,8 @@ class GestorTareas:
         
         return success
 
-    def enviar_a_dlq_consumer(self, job_id: str, razon: str, payload: Optional[Dict[str, Any]] = None) -> bool:
-        """
+    """def enviar_a_dlq_consumer(self, job_id: str, razon: str, payload: Optional[Dict[str, Any]] = None) -> bool:
+        ""
         Envía un job a la Dead Letter Queue de Consumer.
         
         Args:
@@ -856,7 +860,7 @@ class GestorTareas:
             
         Returns:
             True si se envió exitosamente, False en caso contrario
-        """
+        ""
         mensaje = {
             "job_id": job_id,
             "razon": razon,
@@ -873,7 +877,7 @@ class GestorTareas:
             self._metrics['dlq_consumer_errors'] += 1
             log.error(f"[GestorTareas] ❌ Error enviando job_id={job_id} a DLQ_CONSUMER")
         
-        return success
+        return success"""
 
     # ========================================================
     # 🔧 Métodos auxiliares
@@ -1007,7 +1011,7 @@ class GestorTareas:
                             # Verificar que la conexión esté viva
                             self.db.version()
                             self._metrics['health_check_db_success'] += 1
-                            log.debug("[GestorTareas] 🏥 Health check DB OK")
+                            #log.debug("[GestorTareas] 🏥 Health check DB OK")
                         finally:
                             self._db_lock.release()
                     else:

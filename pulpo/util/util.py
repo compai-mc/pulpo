@@ -33,20 +33,38 @@ def load_env(
     """Carga variables desde Vault → .env → config-service"""
 
     def load_all_secrets(client, base_path):
-        """Carga todas las claves de todos los subdirectorios recursivamente."""
+        """
+        Carga todas las claves del path base y de todos los subdirectorios recursivamente.
+        Compatible con Vault KV v2.
+        """
+        # 1️⃣ Intentar leer secretos DIRECTAMENTE del base_path
+        try:
+            secret = client.secrets.kv.v2.read_secret_version(path=base_path)
+            secret_data = secret["data"]["data"]
+            if secret_data:
+                os.environ.update(secret_data)
+        except hvac.exceptions.InvalidPath:
+            # Es válido que el root no tenga datos
+            pass
+        except Exception as e:
+            log.error(f"⚠️ Error leyendo secretos en {base_path}: {e}")
+
+        # 2️⃣ Listar subpaths (si existen)
         try:
             response = client.secrets.kv.v2.list_secrets(path=base_path)
             keys = response["data"]["keys"]
 
             for key in keys:
-                full_path = f"{base_path.rstrip('/')}/{key}"
                 if key.endswith("/"):
+                    full_path = f"{base_path.rstrip('/')}/{key.rstrip('/')}"
                     load_all_secrets(client, full_path)
-                else:
-                    secret_data = client.secrets.kv.v2.read_secret_version(path=full_path)["data"]["data"]
-                    os.environ.update(secret_data)
+
         except hvac.exceptions.InvalidPath:
+            # Es válido que no existan subdirectorios
             pass
+        except Exception as e:
+            log.error(f"⚠️ Error listando secretos en {base_path}: {e}")
+
 
     # --- 1. Vault ---
     vault_loaded = False

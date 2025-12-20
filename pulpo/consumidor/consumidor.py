@@ -21,6 +21,7 @@ MAX_RETRY_ATTEMPTS = int(require_env("KAFKA_MAX_RETRIES"))
 RETRY_BACKOFF_MS = int(require_env("KAFKA_RETRY_BACKOFF_MS"))
 COMMIT_INTERVAL_MS = int(require_env("KAFKA_COMMIT_INTERVAL_MS"))
 WARNING_CALLBACK_SLOW_SEG = int(require_env("KAFKA_WARNING_CALLBACK_SLOW_SEG"))
+
 class KafkaEventConsumer:
     def __init__(
         self,
