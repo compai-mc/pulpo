@@ -89,6 +89,10 @@ def load_env(
         )
 
     # --- 3. Config-service ---
+    # Inicializar variables para evitar UnboundLocalError
+    config_global = {}
+    config_especifico = {}
+    
     try:
         from pulpo.proxies.proxy_config_service import ConfigClient
         config_global = ConfigClient().get_config("compai_global").get("config", {})
