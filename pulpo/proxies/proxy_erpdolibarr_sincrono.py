@@ -97,6 +97,34 @@ class ERPProxySincrono:
         r = self.client.post(f"/proposal/{name}/create/document")
         return r.json()
 
+
+    def confirmar_propuesta(self, proposal_id: int, validate_order: bool = False) -> Dict[str, Any]:
+        """
+        Confirma una propuesta en el ERP Dolibarr y (opcionalmente) genera el pedido.
+
+        Endpoint: POST /proposal/{proposal_id}/confirm?validate_order={true|false}
+        """
+        params = {"validate_order": str(validate_order).lower()}
+
+        try:
+            r = self.client.post(f"/proposal/{proposal_id}/confirm", params=params)
+            r.raise_for_status()
+            return r.json()
+        except httpx.HTTPStatusError as e:
+            return {
+                "error": e.response.text,
+                "status": "failed",
+                "http_status": e.response.status_code,
+                "url": str(e.request.url),
+            }
+        except httpx.RequestError as e:
+            return {
+                "error": str(e),
+                "status": "failed",
+                "http_status": None,
+            }
+
+
     def download_proposal_document(self, name: str) -> bytes:
         """Descarga directa del PDF binario."""
         r = self.client.get(f"/proposal/{name}/document/download")
