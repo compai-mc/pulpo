@@ -130,11 +130,11 @@ class KafkaEventConsumer:
                     backoff = self.retry_backoff_ms / 1000
                     elapsed = 0
                     while elapsed < backoff and self._running:
-                        try:
+                        """try:
                             if consumer and not getattr(consumer, "_closed", True):
                                 consumer.poll(timeout_ms=0)
                         except Exception:
-                            pass
+                            pass"""
                         sleep_chunk = min(1.0, backoff - elapsed)
                         time.sleep(sleep_chunk)
                         elapsed += sleep_chunk
@@ -244,14 +244,16 @@ class KafkaEventConsumer:
             acquired = self._lock.acquire(timeout=1.0)
             if acquired:
                 try:
-                    self._pending_offsets.clear()
+                    for tp, committed_offset in offsets.items():
+                        current = self._pending_offsets.get(tp)
+                        if current is not None and current <= committed_offset:
+                            del self._pending_offsets[tp]
                     self._last_commit_time = time.time()
                 finally:
                     self._lock.release()
 
         except CommitFailedError:
-            # Rebalance en curso → offsets ya no son válidos
-            log.warning("⚠️ Rebalance detectado durante commit, limpiando offsets pendientes")
+            log.warning("⚠️ Rebalance detectado durante commit")
 
             acquired = self._lock.acquire(timeout=1.0)
             if acquired:
@@ -259,6 +261,8 @@ class KafkaEventConsumer:
                     self._pending_offsets.clear()
                 finally:
                     self._lock.release()
+
+            return  # salir del commit, NO seguir
 
         except KafkaError as e:
             log.error(
@@ -326,11 +330,11 @@ class KafkaEventConsumer:
                             break
                         
                         # ❤️ Poll de vida - mantiene heartbeat durante procesamiento lento
-                        if consumer and not getattr(consumer, "_closed", True):
+                        """if consumer and not getattr(consumer, "_closed", True):
                             try:
                                 consumer.poll(timeout_ms=0)
                             except Exception:
-                                pass
+                                pass"""
                             
                         start_time = time.time()
                         ok = self._process_with_retry(msg, consumer)
@@ -511,6 +515,10 @@ class KafkaEventConsumer:
         Wrapper compatible con KafkaConsumer.poll()
         Devuelve {TopicPartition: [ConsumerRecord, ...]} o {} en error
         """
+        if self._running:
+            log.error("❌ poll() no permitido mientras el consumer está en modo start()")
+            return {}
+
         if wait_ready:
             if not self.wait_until_assigned(timeout=wait_ready_timeout):
                 log.error("❌ Timeout esperando asignación del consumidor")
