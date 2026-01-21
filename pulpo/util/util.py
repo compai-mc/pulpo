@@ -108,6 +108,17 @@ def load_env(
         for key, value in config_global_static.items():
             os.environ[str(key)] = str(value)
 
+        for key, value in config_especifico.items():
+            str_key = str(key)
+            
+            # Verificamos si la clave ya existe en el entorno antes de escribir
+            if str_key in os.environ:
+                log.warning(
+                    f"Configuración específica sobrescribiendo variable existente: "
+                    f"Key='{str_key}' | Valor anterior='{os.environ[str_key]}' | Nuevo valor='{value}'"
+                )
+            os.environ[str_key] = str(value)
+
         log.info("🔧 Config-service cargado correctamente")
 
     except Exception as e:
