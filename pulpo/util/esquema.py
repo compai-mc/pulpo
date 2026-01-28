@@ -79,7 +79,6 @@ class CompaiMessage(BaseModel):
         ..., description="Contenido textual completo y limpio del cuerpo del mensaje."
     )
 
-
     from_address: Optional[str] = Field(
         default=None, description="Dirección de mensaje del remitente del mensaje."
     )
@@ -140,6 +139,14 @@ class CompaiMessage(BaseModel):
     )
     story: Optional[List[Dict[str, str]]] = Field(
         default_factory=list, description="Contexto narrativo o historia generada en torno al mensaje."
+    )
+    job_id_parent: Optional[str] = Field(
+        default=None,
+        description="ID del job padre si este mensaje es un chunk derivado de un mensaje original más grande."
+    )
+    type_chunk: Optional[str] = Field(
+        default=None,
+        description="Tipo de chunk: 'global' (primer chunk con todas las entidades), 'producto' (solo productos), etc."
     )
 
 
