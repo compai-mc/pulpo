@@ -123,6 +123,30 @@ class ERPProxySincrono:
                 "status": "failed",
                 "http_status": None,
             }
+    
+    def validar_propuesta(self, proposal_ref: str) -> Dict[str, Any]:
+        """
+        Valida una propuesta en el ERP Dolibarr.
+
+        Endpoint: POST /proposal/{proposal_ref}/validate
+        """
+        try:
+            r = self.client.post(f"/proposal/{proposal_ref}/validate")
+            r.raise_for_status()
+            return r.json()
+        except httpx.HTTPStatusError as e:
+            return {
+                "error": e.response.text,
+                "status": "failed",
+                "http_status": e.response.status_code,
+                "url": str(e.request.url),
+            }
+        except httpx.RequestError as e:
+            return {
+                "error": str(e),
+                "status": "failed",
+                "http_status": None,
+            }
 
 
     def download_proposal_document(self, name: str) -> bytes:
