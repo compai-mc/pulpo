@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 import hvac
 from datetime import datetime
 
+from time import time
+START_TIME = time()
+
+
 from pulpo.logueador import log
 log_time = datetime.now().isoformat(timespec='minutes')
 log.set_propagate(True)
@@ -267,6 +271,20 @@ def cargar_clases_tools(config: dict) -> dict:
     _procesar_nodo(config)
 
     return config
+
+
+def get_version_info(version = "0.0.0"):
+
+    commit = os.getenv("APP_COMMIT","n/a")
+
+    log.info(f"version: {version}.{commit}")
+
+    return {
+        "version": version,
+        "commit": commit,
+        "full_version": f"{version}.{commit}",
+        "uptime_seconds": int(time() - START_TIME)
+    }
 
 
 if __name__ == "__main__":
