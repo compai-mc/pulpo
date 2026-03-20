@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="5.3.0",
+    version="5.3.1",
     packages=find_packages(),
     install_requires=[
         "requests", 
@@ -12,7 +12,6 @@ setup(
         "langroid",
         "hvac",
         "json5",
-        "jwt",
-        "functools"
+        "jwt"
     ],
 )
