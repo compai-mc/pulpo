@@ -288,7 +288,6 @@ def get_version_info(version = "0.0.0"):
     }
 
 
-
 def get_installed_packages():
     """
     Genera una lista de los modulos con los que esta creado este micro
