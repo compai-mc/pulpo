@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="5.2.2",
+    version="5.3.0",
     packages=find_packages(),
     install_requires=[
         "requests", 
@@ -11,6 +11,8 @@ setup(
         "kafka-python",
         "langroid",
         "hvac",
-        "json5"
+        "json5",
+        "jwt",
+        "functools"
     ],
 )
