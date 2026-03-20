@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 import hvac
 from datetime import datetime
+from importlib.metadata import distributions
 
 from time import time
 START_TIME = time()
@@ -287,12 +288,19 @@ def get_version_info(version = "0.0.0"):
     }
 
 
-if __name__ == "__main__":
 
-    cfg = cargar_clases_tools("app/config.json")
+def get_installed_packages():
+    """
+    Genera una lista de los modulos con los que esta creado este micro
+    """
 
-    print(cfg["agents"]["agente_herramientas"]["tools"]["classes"])
-
+    packages = []
+    for dist in distributions():
+        packages.append({
+            "name": dist.metadata["Name"],
+            "version": dist.version
+        })
+    return packages
 
 
 #### Pruebas ##########################
