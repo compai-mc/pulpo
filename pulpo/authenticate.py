@@ -5,10 +5,11 @@ import time
 from cryptography.x509 import load_pem_x509_certificate
 from cryptography.hazmat.backends import default_backend
 from functools import lru_cache
-from fastapi import Request, HTTPException, Security, status
+from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from pulpo.util.util import require_env
+from pulpo.logueador import log
 
 # ========== CONFIGURACIÓN ==========
 KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")              # https://seguridad.merocomsolutions.com"
@@ -16,87 +17,6 @@ REALM = require_env("SEC_REALM")                            # CompAI
 KEYCLOAK_CLIENT_ID = require_env("KEYCLOAK_CLIENT_ID")      # "Forecast"  # client_id en Keycloak
 
 bearer_scheme = HTTPBearer(auto_error=True)
-_jwks_client: PyJWKClient | None = None
-
-# ========== JWKS PARA VERIFICAR FIRMA ==========
-@lru_cache(maxsize=1)
-def _get_jwks_old():
-    """Obtiene las claves públicas de Keycloak para verificar firma."""
-    url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/certs"
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    return response.json()
-
-def _verify_ms_token_old(raw_token: str) -> dict:
-    """
-    Valida el token:
-    1. Verifica firma con JWKS de Keycloak
-    2. Verifica exp
-    3. Verifica iss
-    4. Verifica aud == EXPECTED_AUD
-    """
-    if not raw_token:
-        raise HTTPException(status_code=401, detail="Token vacío")
-
-    try:
-        # Obtener key id del header del token
-        header = jwt.get_unverified_header(raw_token)
-        kid = header.get("kid")
-
-        # Buscar la clave correcta en JWKS
-        jwks = _get_jwks_old()
-        public_key = None
-        for key in jwks.get("keys", []):
-            if key.get("kid") == kid:
-                public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
-                break
-
-        if not public_key:
-            raise HTTPException(status_code=401, detail="Clave pública no encontrada")
-
-        # Decodificar y verificar firma
-        decoded = jwt.decode(
-            raw_token,
-            key=public_key,
-            algorithms=["RS256"],
-            issuer=f"{KEYCLOAK_URL}/realms/{REALM}",
-            options={
-                "verify_exp": True,
-                "verify_iss": True,
-                "verify_aud": False  # la verificamos manualmente
-            }
-        )
-
-        # Verificar audiencia manualmente
-        aud = decoded.get("aud", [])
-        if isinstance(aud, str):
-            aud = [aud]
-        if KEYCLOAK_CLIENT_ID not in aud:
-            raise HTTPException(
-                status_code=403,
-                detail=f"No tienes permiso para acceder a Forecast (aud no contiene '{KEYCLOAK_CLIENT_ID}')"
-            )
-
-        return decoded
-
-    except HTTPException:
-        raise
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidIssuerError:
-        raise HTTPException(status_code=401, detail="Issuer inválido")
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
-
-# ========== DEPENDENCY ==========
-def get_current_user_old(request: Request) -> dict:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Falta Authorization: Bearer <token>")
-
-    token = auth.split(" ", 1)[1]
-    return _verify_ms_token_old(token)
-
 
 """
 Generacion de token
@@ -113,24 +33,17 @@ TOKEN=$(curl -s -X POST \
 
 echo $TOKEN
 
-ejecuta esta línea en alcazar por cada uno de los micros para los que necesites un token de acceso te dará un token que tiene 730 días de caducidad 
+Ejecuta esto en alcazar por cada uno de los micros para los que necesites un token de acceso 
+    te dará un token que tiene 730 días de caducidad 
  
-Token de pruebas para contabilidad :
-eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJTemF6WXA1TzRvZUtNbzd5WFMtNE5MRVpEcC1ydl9GUW1pSHlxUWRhLXFZIn0.eyJleHAiOjE3NzQ0NzIxMjQsImlhdCI6MTc3NDQ3MTgyNCwianRpIjoib25ydHJvOmVkNjAwMTExLWEwMDItNDY2OS05YzYxLThjMDRiM2RmOTNlZiIsImlzcyI6Imh0dHBzOi8vc2VndXJpZGFkLm1lcm9jb21zb2x1dGlvbnMuY29tL3JlYWxtcy9Db21wQUkiLCJhdWQiOlsiQ29ycmVvY29tYm8iLCJGcm9udCIsImNvbmVjdG9yZG9saWJhcnIiLCJDb3JyZW9lbnZpbyIsIm1lc3NhZ2Vjb250cm9sbGVyIiwicHJvY2Vzc2NvbnRyb2xsZXIiLCJkb2xpYmFyciIsIkZyb250LWNvbXBhaSIsIk9ycXVlc3RhdG9yRmxvdyIsImNvcmVjb250cm9sbGVyIiwiRm9yZWNhc3QiLCJjb25maWdzZXJ2aWNlIiwiYWNjb3VudCJdLCJzdWIiOiI1NzQ1NGRiZS1jNjdjLTQ0MWMtYTBlNi1iMjJjMzkzYzczOWUiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJDb250YWJpbGlkYWQiLCJzaWQiOiJjZDcyNDI5Yi1hOTIwLTRkM2UtYTNiZS1mZmYzMDA0MmJkODYiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbIi8qIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIiwiZGVmYXVsdC1yb2xlcy1jb21wYWkiXX0sInJlc291cmNlX2FjY2VzcyI6eyJDb3JyZW9jb21ibyI6eyJyb2xlcyI6WyJ1bWFfcHJvdGVjdGlvbiJdfSwiRnJvbnQiOnsicm9sZXMiOlsidW1hX3Byb3RlY3Rpb24iXX0sImNvbmVjdG9yZG9saWJhcnIiOnsicm9sZXMiOlsidW1hX3Byb3RlY3Rpb24iXX0sIkNvcnJlb2VudmlvIjp7InJvbGVzIjpbInVtYV9wcm90ZWN0aW9uIl19LCJtZXNzYWdlY29udHJvbGxlciI6eyJyb2xlcyI6WyJ1bWFfcHJvdGVjdGlvbiJdfSwicHJvY2Vzc2NvbnRyb2xsZXIiOnsicm9sZXMiOlsidW1hX3Byb3RlY3Rpb24iXX0sImRvbGliYXJyIjp7InJvbGVzIjpbInVtYV9wcm90ZWN0aW9uIl19LCJGcm9udC1jb21wYWkiOnsicm9sZXMiOlsidW1hX3Byb3RlY3Rpb24iXX0sIk9ycXVlc3RhdG9yRmxvdyI6eyJyb2xlcyI6WyJ1bWFfcHJvdGVjdGlvbiJdfSwiY29yZWNvbnRyb2xsZXIiOnsicm9sZXMiOlsidW1hX3Byb3RlY3Rpb24iXX0sIkZvcmVjYXN0Ijp7InJvbGVzIjpbInVtYV9wcm90ZWN0aW9uIl19LCJjb25maWdzZXJ2aWNlIjp7InJvbGVzIjpbInVtYV9wcm90ZWN0aW9uIl19LCJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJQZXBlIFJlZG9uZG8gUnViaW8iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJwZXBlIiwiZ2l2ZW5fbmFtZSI6IlBlcGUiLCJmYW1pbHlfbmFtZSI6IlJlZG9uZG8gUnViaW8iLCJlbWFpbCI6InBlcGUucmVkb25kb0BtZXJvY29tc29sdXRpb25zLmNvbSJ9.sHGOYazx9a4rpZCui0yhieVnHetshosLQSkgZd367O0AaiT6uYlfz6horYl0sXYoF10ut6d0bxNnz14teegtO0dvLEQQKHqsyKAV2mLRoxSvEXnbkPB-XhRLB-8sWeRQZ0EEzVn6vWR88PJ4T-xcf3pbKZem52XG11ED4Jb4v_ONdIXt8th5h0yOkWi-qlCLNP9eGOY8EELpKw9nagPcyE2BefvOoRsy0a_vg65lNKaXux9ul1yD1WOB6bBDDKYXRSPeIf25EdzRZoPHtlhxOrMnBg4_CNZYs0aSOIOV8TWNvCq_OiP12pfHhhUF4mFQvq78hb-LUkyPqhSzt5nGug
-
  """
 
 @lru_cache(maxsize=1)
 def _get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        _jwks_client = PyJWKClient(
-            f"{KEYCLOAK_URL}/realms/{REALM}"
-            "/protocol/openid-connect/certs",
-            cache_keys=True,
-        )
-    return _jwks_client
-
+    return PyJWKClient(
+        f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/certs",
+        cache_keys=True,
+    )
 
 async def verify_token(
     credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
@@ -148,12 +61,14 @@ async def verify_token(
             options={"verify_exp": True, "verify_aud": False},
         )
     except jwt.ExpiredSignatureError:
+        log.warning("Token expirado")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expirado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.InvalidTokenError as e:
+        log.warning(f"Token invalido {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Token inválido: {e}",
@@ -162,6 +77,9 @@ async def verify_token(
 
     # El portal hace el exchange → el token llega con azp == client_id de este servicio
     if decoded.get("azp") != KEYCLOAK_CLIENT_ID:
+        log.warning(
+            f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}')"
+            )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -173,9 +91,7 @@ async def verify_token(
     return decoded
 
 
-
-
-
+# A partir de aqui no se utiliza
 
 class Auth:
     def __init__(self, base_url, realm, client_id, client_secret):
@@ -420,7 +336,7 @@ class Auth:
             raise Exception(f"Token inválido: {str(e)}")
 
     def __get_public_key(self):
-        """✅ CORREGIDO: Obtiene clave pública de Keycloak"""
+        """ Obtiene clave pública de Keycloak"""
         response = requests.get(self.cert_url)
         if response.status_code == 200:
             certs = response.json()
@@ -431,7 +347,6 @@ class Auth:
             
             cert_str = keys[0]["x5c"][0]
             
-            # ✅ CORRECCIÓN PRINCIPAL: Usar \n real en lugar de \\n
             cert_pem = f"-----BEGIN CERTIFICATE-----\n{cert_str}\n-----END CERTIFICATE-----"
             
             cert_obj = load_pem_x509_certificate(cert_pem.encode(), default_backend())
