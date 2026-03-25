@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import hvac
 from datetime import datetime
 from importlib.metadata import distributions
+from typing import Union, List
 
 from time import time
 START_TIME = time()
@@ -31,7 +32,7 @@ def require_env(var_name: str) -> str:
 def load_env(
         vault_addr:str = "http://alcazar:8200",
         vault_token:str = "root",
-        vault_path:str = "des/compai",
+        vault_path: Union[str, List[str]] = "des/compai",
         env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env",
         config_especifico_id: str = ""
     ):
@@ -78,7 +79,16 @@ def load_env(
             client = hvac.Client(url=vault_addr, token=vault_token)
             if client.is_authenticated():
                 log.info("✅ Vault conectado correctamente")
-                load_all_secrets(client, vault_path)
+
+                paths = (
+                    vault_path
+                    if isinstance(vault_path, (list, tuple))
+                    else [vault_path]
+                )
+
+                for path in paths:
+                    load_all_secrets(client, path)
+
                 vault_loaded = True
             else:
                 log.warning("⚠️ Token inválido, usando .env local")
