@@ -5,7 +5,7 @@ from functools import lru_cache
 from fastapi import Request, HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from util.util import require_env
+from pulpo.util.util import require_env
 
 # ========== CONFIGURACIÓN ==========
 KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")              # https://seguridad.merocomsolutions.com"
@@ -13,10 +13,7 @@ REALM = require_env("SEC_REALM")                            # CompAI
 KEYCLOAK_CLIENT_ID = require_env("KEYCLOAK_CLIENT_ID")      # "Forecast"  # client_id en Keycloak
 
 bearer_scheme = HTTPBearer(auto_error=True)
-
 _jwks_client: PyJWKClient | None = None
-
-
 
 # ========== JWKS PARA VERIFICAR FIRMA ==========
 @lru_cache(maxsize=1)
