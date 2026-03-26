@@ -81,11 +81,10 @@ async def verify_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # El portal hace el exchange → el token llega con azp == client_id de este servicio
     if decoded.get("azp") != KEYCLOAK_CLIENT_ID:
         log.warning(
             f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}')"
-            )
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -94,6 +93,14 @@ async def verify_token(
             ),
         )
 
+<<<<<<< HEAD
+=======
+    # Aquí no toques el dict. Solo log y return.
+    log.info(
+        f"Token válido para usuario '{decoded.get('preferred_username')}' "
+        f"con roles: {decoded.get('realm_access', {}).get('roles', [])}"
+    )
+>>>>>>> 96d1ae1fd79630075ad0c4608dcd175e1b467b7c
     return decoded
 
 
