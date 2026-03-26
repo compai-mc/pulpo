@@ -88,10 +88,11 @@ async def verify_token(
             ),
         )
 
+
+    log.debug(f"Token válido para usuario '{decoded.get('preferred_username')}' con roles: {decoded.get('realm_access', {}).get('roles', [])}")
     return decoded
 
 
-# A partir de aqui no se utiliza
 
 class Auth:
     def __init__(self, base_url, realm, client_id, client_secret):
