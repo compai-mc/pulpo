@@ -7,9 +7,15 @@ from cryptography.hazmat.backends import default_backend
 from functools import lru_cache
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
+log_time = datetime.now().isoformat(timespec='minutes')
+log.set_propagate(True)
+log.set_log_file(f"log/pulpo[{log_time}].log")
+log.set_log_level(require_env("log_level"))
+
 
 # ========== CONFIGURACIÓN ==========
 KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")              # https://seguridad.merocomsolutions.com"
