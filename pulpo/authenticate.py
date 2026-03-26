@@ -93,14 +93,12 @@ async def verify_token(
             ),
         )
 
-<<<<<<< HEAD
-=======
-    # Aquí no toques el dict. Solo log y return.
+
     log.info(
         f"Token válido para usuario '{decoded.get('preferred_username')}' "
         f"con roles: {decoded.get('realm_access', {}).get('roles', [])}"
     )
->>>>>>> 96d1ae1fd79630075ad0c4608dcd175e1b467b7c
+
     return decoded
 
 
