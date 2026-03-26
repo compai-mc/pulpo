@@ -95,7 +95,7 @@ async def verify_token(
         )
 
 
-    log.debug(f"Token válido para usuario '{decoded.get('preferred_username')}' con roles: {decoded.get('realm_access', {}).get('roles', [])}")
+    print(f"Token válido para usuario '{decoded.get('preferred_username')}' con roles: {decoded.get('realm_access', {}).get('roles', [])}")
     return decoded
 
 
