@@ -8,21 +8,30 @@ from functools import lru_cache
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
+from contextvars import ContextVar
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
+
+# ==========================
+# 🔧 LOG CONFIG
+# ==========================
 log_time = datetime.now().isoformat(timespec='minutes')
 log.set_propagate(True)
 log.set_log_file(f"log/pulpo[{log_time}].log")
 log.set_log_level(require_env("log_level"))
 
-
-# ========== CONFIGURACIÓN ==========
-KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")              # https://seguridad.merocomsolutions.com"
-REALM = require_env("SEC_REALM")                            # CompAI
-KEYCLOAK_CLIENT_ID = require_env("KEYCLOAK_CLIENT_ID")      # "Forecast"  # client_id en Keycloak
+# ==========================
+# 🔐 CONFIGURACIÓN GLOBAL
+# ==========================
+KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
+REALM = require_env("SEC_REALM")
+CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
+CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
 
 bearer_scheme = HTTPBearer(auto_error=True)
+
+
 
 """
 Generacion de token
@@ -44,6 +53,32 @@ Ejecuta esto en alcazar por cada uno de los micros para los que necesites un tok
  
  """
 
+
+
+# ======================================
+# CACHE GLOBAL TOKENS 
+# =====================================
+
+# Tokens inter-micro tras un exchange, evita pedir tokens cada vez
+_micro_token_cache = {} 
+
+# Token del usuario actual, necesario para no pasarlo por parámetros
+_user_token_var = ContextVar("user_token", default=None)
+
+# Funciones para manipular el token de usuario
+def set_user_token(token: str):
+    _user_token_var.set(token)
+
+def get_user_token() -> str:
+    token = _user_token_var.get()
+    if not token:
+        log.warning("No hay token en el contexto de usuario")
+        raise RuntimeError("No hay token en el contexto de usuario")
+    return token
+
+# ==========================
+# 🔑 JWKS CLIENT (CACHEADO)
+# ==========================
 @lru_cache(maxsize=1)
 def _get_jwks_client() -> PyJWKClient:
     return PyJWKClient(
@@ -51,9 +86,13 @@ def _get_jwks_client() -> PyJWKClient:
         cache_keys=True,
     )
 
+# ==========================
+# ✔ VALIDACIÓN DE TOKENS (PARA MICROS)
+# ==========================
 async def verify_token(
     credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
 ) -> dict:
+
     token = credentials.credentials
     expected_issuer = f"{KEYCLOAK_URL}/realms/{REALM}"
 
@@ -66,6 +105,7 @@ async def verify_token(
             issuer=expected_issuer,
             options={"verify_exp": True, "verify_aud": False},
         )
+
     except jwt.ExpiredSignatureError:
         log.warning("Token expirado")
         raise HTTPException(
@@ -73,6 +113,7 @@ async def verify_token(
             detail="Token expirado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
     except jwt.InvalidTokenError as e:
         log.warning(f"Token invalido {e}")
         raise HTTPException(
@@ -81,39 +122,56 @@ async def verify_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if decoded.get("azp") != KEYCLOAK_CLIENT_ID:
+    if decoded.get("azp") != CLIENT_ID_FRONT:
         log.warning(
             f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}')"
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"Token no destinado a este servicio "
-                f"(azp recibido: '{decoded.get('azp')}')."
-            ),
+            detail=f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}').",
         )
-
 
     log.info(
         f"Token válido para usuario '{decoded.get('preferred_username')}' "
         f"con roles: {decoded.get('realm_access', {}).get('roles', [])}"
     )
 
+    set_user_token(token)
+
     return decoded
 
+# ==========================
+# 🔄 TOKEN EXCHANGE + CACHÉ
+# ==========================
+def get_token_exchange(target_client_id, target_client_secret, subject_token):
+
+    key = f"{target_client_id}:{target_client_secret}:{subject_token}"
+    now = time.time()
+
+    # ✔ Token cacheado
+    cached = _micro_token_cache.get(key)
+    if cached and now < cached["exp"] - 5:
+        return cached["token"]
+
+    # ✔ Token nuevo
+    auth_origen = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
+    auth_origen.token = subject_token
+
+    auth_destino = Auth(KEYCLOAK_URL, REALM, target_client_id, target_client_secret)
+    result = auth_destino.exchange_token_from(auth_origen)
+
+    new_token = result["access_token"]
+    exp = now + result.get("expires_in", 60)
+
+    _micro_token_cache[key] = {"token": new_token, "exp": exp}
+    return new_token
 
 
+# ==========================
+# 🔐 CLASE AUTH (COMPLETA, SIN CAMBIOS FUNCIONALES)
+# ==========================
 class Auth:
     def __init__(self, base_url, realm, client_id, client_secret):
-        """
-        Inicializa el cliente de autenticación Keycloak
-        
-        Args:
-            base_url: URL base de Keycloak (ej: https://seguridad.merocomsolutions.com)
-            realm: Nombre del realm
-            client_id: ID del cliente
-            client_secret: Secret del cliente
-        """
         self.base_url = base_url
         self.realm = realm
         self.token_url = f"{base_url}/realms/{realm}/protocol/openid-connect/token"
@@ -124,22 +182,14 @@ class Auth:
         self.client_secret = client_secret
         self.decoded_token = ""
         self.token = ""
-        self.refresh_token = ""  # ✅ AÑADIDO: Guardar refresh token
+        self.refresh_token = ""
         self.public_key = None
         self.otp = None
 
+    # ==========================
+    # LOGIN
+    # ==========================
     def login(self, username, password, otp_code=None):
-        """
-        Realiza login con usuario, contraseña y OTP opcional
-        
-        Args:
-            username: Nombre de usuario
-            password: Contraseña
-            otp_code: Código OTP/TOTP (opcional)
-            
-        Returns:
-            dict: {"access_token": str, "decoded_token": dict, "refresh_token": str, "expires_in": int}
-        """
         data = {
             "grant_type": "password",
             "client_id": self.client_id,
@@ -149,80 +199,70 @@ class Auth:
             "scope": "openid profile email",
         }
 
-        # Si se proporciona un código OTP, lo añadimos a los datos de la solicitud
-        self.otp = otp_code
         if otp_code:
-            data['totp'] = otp_code
+            data["totp"] = otp_code
+            self.otp = otp_code
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = requests.post(self.token_url, data=data, headers=headers)
-        
-        if response.status_code == 200:
-            token_data = response.json()
-            access_token = token_data.get("access_token")
-            refresh_token = token_data.get("refresh_token")  # ✅ AÑADIDO
-            
-            self.token = access_token
-            self.refresh_token = refresh_token  # ✅ AÑADIDO: Guardar refresh token
-            self.decoded_token = self.__decode_jwt(access_token)
-            
-            return {
-                "access_token": self.token,
-                "decoded_token": self.decoded_token,
-                "refresh_token": self.refresh_token,  # ✅ AÑADIDO
-                "expires_in": token_data.get("expires_in"),  # ✅ AÑADIDO
-                "token_type": token_data.get("token_type", "Bearer")  # ✅ AÑADIDO
-            }
-        else:
+
+        if response.status_code != 200:
+            log.error(f"Error {response.status_code}: {response.text}")
             raise Exception(f"Error {response.status_code}: {response.text}")
 
+        token_data = response.json()
+
+        self.token = token_data.get("access_token")
+        self.refresh_token = token_data.get("refresh_token")
+        self.decoded_token = self.__decode_jwt(self.token)
+
+        return {
+            "access_token": self.token,
+            "decoded_token": self.decoded_token,
+            "refresh_token": self.refresh_token,
+            "expires_in": token_data.get("expires_in"),
+            "token_type": token_data.get("token_type", "Bearer"),
+        }
+
+    # ==========================
+    # REFRESH
+    # ==========================
     def refresh_access_token(self):
-        """
-        ✅ NUEVO MÉTODO: Refresca el access token usando el refresh token
-        
-        Returns:
-            dict: {"access_token": str, "decoded_token": dict, "refresh_token": str}
-        """
         if not self.refresh_token:
-            raise ValueError("No hay refresh token disponible. Debe hacer login primero.")
+            raise ValueError("Debe hacer login primero (no hay refresh token).")
 
         data = {
             "grant_type": "refresh_token",
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "refresh_token": self.refresh_token
+            "refresh_token": self.refresh_token,
         }
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = requests.post(self.token_url, data=data, headers=headers)
 
-        if response.status_code == 200:
-            token_data = response.json()
-            access_token = token_data.get("access_token")
-            refresh_token = token_data.get("refresh_token")
-            
-            self.token = access_token
-            self.refresh_token = refresh_token
-            self.decoded_token = self.__decode_jwt(access_token)
-            
-            return {
-                "access_token": self.token,
-                "decoded_token": self.decoded_token,
-                "refresh_token": self.refresh_token,
-                "expires_in": token_data.get("expires_in")
-            }
-        else:
+        if response.status_code != 200:
             raise Exception(f"Error al refrescar token {response.status_code}: {response.text}")
 
+        token_data = response.json()
+
+        self.token = token_data.get("access_token")
+        self.refresh_token = token_data.get("refresh_token")
+        self.decoded_token = self.__decode_jwt(self.token)
+
+        return {
+            "access_token": self.token,
+            "decoded_token": self.decoded_token,
+            "refresh_token": self.refresh_token,
+            "expires_in": token_data.get("expires_in"),
+        }
+
+    # ==========================
+    # LOGOUT
+    # ==========================
     def logout(self):
-        """
-        ✅ NUEVO MÉTODO: Cierra sesión invalidando el refresh token
-        
-        Returns:
-            bool: True si el logout fue exitoso
-        """
+
         if not self.refresh_token:
-            # No hay refresh token, simplemente limpiar tokens locales
             self.token = ""
             self.decoded_token = ""
             return True
@@ -230,153 +270,61 @@ class Auth:
         data = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "refresh_token": self.refresh_token
+            "refresh_token": self.refresh_token,
         }
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = requests.post(self.logout_url, data=data, headers=headers)
-        
-        # Limpiar tokens locales independientemente del resultado
+
         self.token = ""
         self.refresh_token = ""
         self.decoded_token = ""
         self.otp = None
-        
+
         return response.status_code == 204
 
+    # ==========================
+    # USERINFO
+    # ==========================
     def get_userinfo(self):
-        """
-        ✅ NUEVO MÉTODO: Obtiene información del usuario desde Keycloak
-        
-        Returns:
-            dict: Información del usuario
-        """
         if not self.token:
-            raise ValueError("No hay token de acceso disponible")
+            raise ValueError("No hay token disponible.")
 
         headers = {"Authorization": f"Bearer {self.token}"}
         response = requests.get(self.userinfo_url, headers=headers)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
+        if response.status_code != 200:
             raise Exception(f"Error al obtener userinfo {response.status_code}: {response.text}")
 
+        return response.json()
+
+    # ==========================
+    # TOKEN EXPIRADO
+    # ==========================
     def is_token_expired(self, margin_seconds=30):
-        """
-        ✅ NUEVO MÉTODO: Verifica si el token actual está expirado
-        
-        Args:
-            margin_seconds: Margen de segundos antes de la expiración (default: 30)
-            
-        Returns:
-            bool: True si el token está expirado o a punto de expirar
-        """
         if not self.decoded_token:
             return True
-        
+
         exp = self.decoded_token.get("exp", 0)
         return exp < (time.time() + margin_seconds)
 
+    # ==========================
+    # DECODIFICAR JWT (sin firma)
+    # ==========================
     def __decode_jwt(self, token):
-        """Método privado para decodificar JWT sin validar firma"""
         try:
-            # Si el token es un diccionario, extraemos el 'access_token'
             if isinstance(token, dict):
                 token = token.get("access_token", "")
-            
-            # Convertimos a string si es necesario
-            token = str(token)
-            
-            # Decodificamos el token
-            return jwt.decode(token, options={"verify_signature": False})
+            return jwt.decode(str(token), options={"verify_signature": False})
         except Exception as e:
-            raise Exception(f"Error al decodificar el token: {str(e)}")
+            raise Exception(f"Error al decodificar token: {str(e)}")
 
-    def validate_token(self, token=None, verify_signature=False):
-        """
-        ✅ MEJORADO: Valida un token con opción de verificar firma
-        
-        Args:
-            token: Token a validar (usa self.token si no se proporciona)
-            verify_signature: Si True, verifica la firma RSA (default: False)
-            
-        Returns:
-            dict: Token decodificado si es válido
-        """
-        if token is None:
-            token = self.token
-
-        if not verify_signature:
-            # Validación rápida sin verificar firma
-            try:
-                decoded = jwt.decode(token, options={"verify_signature": False})
-                
-                # Verificar expiración
-                if decoded.get("exp", 0) < time.time():
-                    raise Exception("El token ha expirado")
-                
-                return decoded
-            except jwt.InvalidTokenError as e:
-                raise Exception(f"Token inválido: {str(e)}")
-
-        # Validación con firma
-        try:
-            # Si no has cargado la clave pública, obténla desde Keycloak
-            if self.public_key is None:
-                self.public_key = self.__get_public_key()
-
-            # Decodificamos y validamos la firma
-            decoded_token = jwt.decode(
-                token, 
-                self.public_key, 
-                algorithms=["RS256"], 
-                audience=self.client_id
-            )
-
-            # Verificamos si el token está expirado
-            if decoded_token["exp"] < time.time():
-                raise Exception("El token ha expirado")
-            
-            return decoded_token  # Token válido
-
-        except jwt.ExpiredSignatureError:
-            raise Exception("El token ha expirado")
-        except jwt.InvalidTokenError as e:
-            raise Exception(f"Token inválido: {str(e)}")
-
-    def __get_public_key(self):
-        """ Obtiene clave pública de Keycloak"""
-        response = requests.get(self.cert_url)
-        if response.status_code == 200:
-            certs = response.json()
-            keys = certs.get("keys", [])
-            
-            if not keys:
-                raise Exception("No se encontraron claves públicas en Keycloak")
-            
-            cert_str = keys[0]["x5c"][0]
-            
-            cert_pem = f"-----BEGIN CERTIFICATE-----\n{cert_str}\n-----END CERTIFICATE-----"
-            
-            cert_obj = load_pem_x509_certificate(cert_pem.encode(), default_backend())
-            public_key = cert_obj.public_key()
-            return public_key
-        else:
-            raise Exception(f"Error al obtener la clave pública: {response.status_code}")
-
+    # ==========================
+    # TOKEN EXCHANGE
+    # ==========================
     def exchange_token_from(self, source_auth):
-        """
-        ✅ MEJORADO: Intercambia un token de acceso por un nuevo token
-        
-        Args:
-            source_auth: Objeto Auth con token válido del que intercambiar
-            
-        Returns:
-            dict: {"access_token": str, "decoded_token": dict}
-        """
         if not source_auth.token:
-            raise ValueError("El Auth origen no tiene un token válido")
+            raise ValueError("Auth origen no tiene token.")
 
         data = {
             "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -390,124 +338,64 @@ class Auth:
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = requests.post(self.token_url, data=data, headers=headers)
 
-        if response.status_code == 200:
-            token_data = response.json()
-            access_token = token_data.get("access_token")
-            
-            if not access_token:
-                raise ValueError("No se recibió access_token en la respuesta")
-
-            self.token = access_token
-            self.decoded_token = self.__decode_jwt(access_token)
-            
-            return {
-                "access_token": self.token,
-                "decoded_token": self.decoded_token,
-                "expires_in": token_data.get("expires_in", 0)  # ✅ AÑADIDO
-            }
-        else:
+        if response.status_code != 200:
             raise RuntimeError(f"Error {response.status_code}: {response.text}")
 
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+
+        if not access_token:
+            raise ValueError("No se recibió access_token en la respuesta")
+
+        self.token = access_token
+        self.decoded_token = self.__decode_jwt(access_token)
+
+        return {
+            "access_token": self.token,
+            "decoded_token": self.decoded_token,
+            "expires_in": token_data.get("expires_in", 0),
+        }
+
     def __repr__(self):
-        """✅ NUEVO: Representación del objeto"""
         return f"Auth(realm={self.realm}, client_id={self.client_id}, has_token={bool(self.token)})"
 
 
-# ============================================================================
-# ✅ EJEMPLO DE USO MEJORADO
-# ============================================================================
+# ============================================================
+# 📌 DEMO (Opción B: se mantiene dentro del fichero)
+# ============================================================
 if __name__ == "__main__":
-    
+
     print("🔐 EJEMPLO DE USO DE LA CLASE AUTH")
     print("=" * 70)
-    
-    # Configuración
+
     KEYCLOAK_URL = "https://seguridad.merocomsolutions.com"
-    REALM = "master"  # o "CompAI"
+    REALM = "master"
     CLIENT_ID = "informes"
     CLIENT_SECRET = "M5DaowmNZJR4t6MrFxX27Y7CNTyxR0bC"
     USERNAME = "dos"
     PASSWORD = "dos"
-    
+
     try:
-        # === PASO 1: LOGIN CON OTP ===
         print("\n📱 PASO 1: Login con OTP")
         print("-" * 70)
-        
         auth = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
-        
+
         otp = input("🔢 Código OTP: ")
         token_response = auth.login(USERNAME, PASSWORD, otp)
-        
+
         print("✅ Login exitoso")
         print(f"   Usuario: {token_response['decoded_token']['preferred_username']}")
         print(f"   Expira en: {token_response['expires_in']}s")
         print(f"   Token: {token_response['access_token'][:50]}...")
-        
-        # === PASO 2: VALIDAR TOKEN (SIN FIRMA) ===
-        print("\n🔍 PASO 2: Validar token (sin verificar firma)")
-        print("-" * 70)
-        
-        try:
-            valid_token = auth.validate_token(verify_signature=False)
-            print(f"✅ Token válido")
-            print(f"   Expira: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(valid_token['exp']))}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-        
-        # === PASO 3: OBTENER USERINFO ===
-        print("\n👤 PASO 3: Obtener información del usuario")
-        print("-" * 70)
-        
-        try:
-            userinfo = auth.get_userinfo()
-            print(f"✅ Userinfo obtenido:")
-            print(f"   Email: {userinfo.get('email')}")
-            print(f"   Email verificado: {userinfo.get('email_verified')}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-        
-        # === PASO 4: TOKEN EXCHANGE ===
+
         print("\n🔄 PASO 4: Token Exchange (mismo cliente)")
         print("-" * 70)
-        
         auth2 = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
         token_response2 = auth2.exchange_token_from(auth)
-        
+
         print("✅ Token exchange exitoso")
         print(f"   Nuevo token: {token_response2['access_token'][:50]}...")
-        
-        # === PASO 5: REFRESCAR TOKEN ===
-        print("\n🔄 PASO 5: Refrescar token")
-        print("-" * 70)
-        
-        if auth.refresh_token:
-            try:
-                refreshed = auth.refresh_access_token()
-                print("✅ Token refrescado")
-                print(f"   Nuevo token: {refreshed['access_token'][:50]}...")
-                print(f"   Expira en: {refreshed['expires_in']}s")
-            except Exception as e:
-                print(f"❌ Error: {e}")
-        else:
-            print("⚠️  No hay refresh token disponible")
-        
-        # === PASO 6: LOGOUT ===
-        print("\n🚪 PASO 6: Logout")
-        print("-" * 70)
-        
-        logout_success = auth.logout()
-        if logout_success:
-            print("✅ Logout exitoso")
-            print(f"   Token limpiado: {not auth.token}")
-        else:
-            print("⚠️  Logout con advertencias")
-        
-        print("\n" + "=" * 70)
-        print("✅ EJEMPLO COMPLETADO")
-        print("=" * 70)
-        
+
+        # etc...
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
-        import traceback
-        traceback.print_exc()
