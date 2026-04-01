@@ -1,6 +1,6 @@
 """
 
-Cliente de contabilidad: La llamada zsería así:
+Cliente de contabilidad: La llamada es así:
 
     from pulpo.proxies.proxy_contabilidad import ContabilidadClient
     cliente = ContabilidadClient()
@@ -41,7 +41,7 @@ class ContabilidadClient:
             resp = client.post(
                 f"{self.base_url}{path}",
                 json=payload,
-                headers=self._auth_headers()   # ← AÑADIDO
+                headers=self._auth_headers()   
             )
             resp.raise_for_status()
             return resp.json()
@@ -51,7 +51,7 @@ class ContabilidadClient:
             resp = client.put(
                 f"{self.base_url}{path}",
                 json=payload,
-                headers=self._auth_headers()   # ← AÑADIDO
+                headers=self._auth_headers()   
             )
             resp.raise_for_status()
             return resp.json()
@@ -61,7 +61,7 @@ class ContabilidadClient:
             resp = client.get(
                 f"{self.base_url}{path}",
                 params=params,
-                headers=self._auth_headers()   # ← AÑADIDO
+                headers=self._auth_headers()   
             )
             resp.raise_for_status()
             return resp.json()
@@ -70,7 +70,7 @@ class ContabilidadClient:
         with httpx.Client() as client:
             resp = client.delete(
                 f"{self.base_url}{path}",
-                headers=self._auth_headers()   # ← AÑADIDO
+                headers=self._auth_headers()  
             )
             if resp.status_code == 204:
                 return None

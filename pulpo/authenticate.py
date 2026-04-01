@@ -228,7 +228,9 @@ class Auth:
     # REFRESH
     # ==========================
     def refresh_access_token(self):
+        
         if not self.refresh_token:
+            log.error("No hay refresh token disponible para refrescar el access token.")
             raise ValueError("Debe hacer login primero (no hay refresh token).")
 
         data = {
@@ -242,6 +244,7 @@ class Auth:
         response = requests.post(self.token_url, data=data, headers=headers)
 
         if response.status_code != 200:
+            log.error(f"Error al refrescar token {response.status_code}: {response.text}")
             raise Exception(f"Error al refrescar token {response.status_code}: {response.text}")
 
         token_data = response.json()
@@ -324,6 +327,7 @@ class Auth:
     # ==========================
     def exchange_token_from(self, source_auth):
         if not source_auth.token:
+            log.error("Auth origen no tiene token para hacer exchange.")
             raise ValueError("Auth origen no tiene token.")
 
         data = {
@@ -335,16 +339,20 @@ class Auth:
             "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
         }
 
+        # Llamando a keycloak
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = requests.post(self.token_url, data=data, headers=headers)
 
         if response.status_code != 200:
+            log.error(f"Error en token exchange {response.status_code}: {response.text}")
             raise RuntimeError(f"Error {response.status_code}: {response.text}")
 
         token_data = response.json()
         access_token = token_data.get("access_token")
+        expires_in = token_data.get("expires_in", 0)
 
         if not access_token:
+            log.error(f"No se recibió access_token en la respuesta de token exchange: {token_data}")
             raise ValueError("No se recibió access_token en la respuesta")
 
         self.token = access_token
@@ -353,7 +361,7 @@ class Auth:
         return {
             "access_token": self.token,
             "decoded_token": self.decoded_token,
-            "expires_in": token_data.get("expires_in", 0),
+            "expires_in": expires_in
         }
 
     def __repr__(self):
