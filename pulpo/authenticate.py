@@ -51,6 +51,27 @@ echo $TOKEN
 Ejecuta esto en alcazar por cada uno de los micros para los que necesites un token de acceso 
     te dará un token que tiene 730 días de caducidad 
  
+RESPONSE=$(curl -s -X POST \
+  "https://seguridad.merocomsolutions.com/realms/CompAI/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=Contabilidad" \
+  -d "client_secret=ZTp7gW3N3krrlP9xzPVJz3k0e9ogYVmt" \
+  -d "username=pepe" \
+  -d "password=pepe" \
+  -d "totp=474624")
+
+ACCESS=$(echo "$RESPONSE" | jq -r '.access_token')
+REFRESH=$(echo "$RESPONSE" | jq -r '.refresh_token')
+REFRESH_EXP=$(echo "$RESPONSE" | jq -r '.refresh_expires_in')
+
+echo $ACCESS
+echo
+echo $REFRESH
+echo
+echo $REFRESH_EXP
+    
+
  """
 
 
