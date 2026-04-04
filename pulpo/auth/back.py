@@ -96,19 +96,18 @@ async def verify_token(
 
     log.debug(f"APP_ENV={APP_ENV}, cred: {credentials.scheme.lower()}, DEV_API_KEY={'set' if DEV_API_KEY else 'not set'}")
 
-    if APP_ENV == "dev" and credentials:
-        if credentials.scheme.lower() == "apikey":
-            if credentials.credentials == DEV_API_KEY:
-                
-                log.warning("🔓 Acceso con API KEY (modo desarrollo)")
-                set_user_token(DEV_API_KEY)
+    if APP_ENV == "dev" and credentials:      
+        if credentials.credentials == DEV_API_KEY:
+            
+            log.warning("🔓 Acceso con API KEY (modo desarrollo)")
+            set_user_token(DEV_API_KEY)
 
-                return {
-                    "preferred_username": "dev_user",
-                    "realm_access": {"roles": ["admin"]},
-                    "azp": CLIENT_ID_FRONT,
-                    "dev_mode": True
-                }
+            return {
+                "preferred_username": "dev_user",
+                "realm_access": {"roles": ["admin"]},
+                "azp": CLIENT_ID_FRONT,
+                "dev_mode": True
+            }
     # ==========================
 
 
