@@ -9,7 +9,6 @@ from pulpo.util.util import require_env
 from pulpo.logueador import log
 from pulpo.auth.general import Auth, set_user_token
 
-
 # ==========================
 # 🔧 LOG CONFIG
 # ==========================
@@ -17,7 +16,6 @@ log_time = datetime.now().isoformat(timespec='minutes')
 log.set_propagate(True)
 log.set_log_file(f"log/pulpo[{log_time}].log")
 log.set_log_level(require_env("log_level"))
-
 
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
 

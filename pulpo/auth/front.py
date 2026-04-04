@@ -23,8 +23,7 @@ import time
 
 from pulpo.logueador import log
 from pulpo.util.util import require_env
-from pulpo.auth.back import Auth   
-from pulpo.auth.general import set_user_token
+from pulpo.auth.general import set_user_token, Auth
 
 # ==========================
 # 🔐 CONFIGURACIÓN GLOBAL

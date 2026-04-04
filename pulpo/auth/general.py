@@ -5,7 +5,6 @@ import requests
 import jwt
 from contextvars import ContextVar
 
-from pulpo.auth.back import get_token_exchange
 from pulpo.logueador import log
 from pulpo.util.util import require_env
 
@@ -31,7 +30,6 @@ def get_user_token() -> str:
         log.warning("No hay token en el contexto de usuario")
         raise RuntimeError("No hay token en el contexto de usuario")
     return token
-
 
 
 # Tokens inter-micro tras un exchange, evita pedir tokens cada vez
