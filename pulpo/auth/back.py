@@ -18,6 +18,8 @@ log.set_log_file(f"log/pulpo[{log_time}].log")
 log.set_log_level(require_env("log_level"))
 
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
+APP_ENV = require_env("APP_ENV")
+DEV_API_KEY = require_env("DEV_API_KEY")
 
 bearer_scheme = HTTPBearer(auto_error=True)
 
@@ -60,8 +62,6 @@ echo
 echo $REFRESH_EXP
 """
 
-
-
 # ==========================
 # 🔑 JWKS CLIENT (CACHEADO)
 # ==========================
@@ -81,6 +81,27 @@ async def verify_token(
 
     token = credentials.credentials
     expected_issuer = f"{KEYCLOAK_URL}/realms/{REALM}"
+
+
+    # ==========================
+    # 🚀 MODO DEV: API KEY
+    # ==========================
+    if APP_ENV == "dev" and credentials:
+        if credentials.scheme.lower() == "apikey":
+            if credentials.credentials == DEV_API_KEY:
+                
+                log.warning("🔓 Acceso con API KEY (modo desarrollo)")
+                set_user_token(DEV_API_KEY)
+
+                return {
+                    "preferred_username": "dev_user",
+                    "realm_access": {"roles": ["admin"]},
+                    "azp": CLIENT_ID_FRONT,
+                    "dev_mode": True
+                }
+    # ==========================
+
+
 
     try:
         signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
