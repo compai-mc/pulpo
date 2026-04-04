@@ -53,7 +53,7 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
 
     # ✔ Token cacheado
     cached = _micro_token_cache.get(key)
-    if cached and now < cached["exp"] - 5:
+    if cached and now < cached["exp"] - 10:
         return cached["token"]
 
     # ✔ Token nuevo
@@ -64,7 +64,10 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
     result = auth_destino.exchange_token_from(auth_origen)
 
     new_token = result["access_token"]
-    exp = now + result.get("expires_in", 60)
+    exp = now + result.get("expires_in")
+    if not expires_in:
+        log.warning("⚠ Token exchange sin expires_in — usando fallback 300s")
+        expires_in = 300
 
     _micro_token_cache[key] = {"token": new_token, "exp": exp}
     return new_token

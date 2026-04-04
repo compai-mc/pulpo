@@ -105,7 +105,6 @@ async def verify_token(
             }
     # ==========================
 
-
     try:
         signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
         decoded: dict = jwt.decode(
@@ -155,7 +154,7 @@ async def verify_token(
 
 
 # ============================================================
-# 📌 DEMO (Opción B: se mantiene dentro del fichero)
+# 📌 Pruebas
 # ============================================================
 if __name__ == "__main__":
 
