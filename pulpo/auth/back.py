@@ -17,13 +17,15 @@ log.set_propagate(True)
 log.set_log_file(f"log/pulpo[{log_time}].log")
 log.set_log_level(require_env("log_level"))
 
+KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
+REALM = require_env("SEC_REALM")
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
 APP_ENV = require_env("APP_ENV")
 
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
 except:
-    pass
+    DEV_API_KEY = None
 
 bearer_scheme = HTTPBearer(auto_error=True)
 

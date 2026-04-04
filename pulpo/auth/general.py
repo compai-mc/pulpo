@@ -19,7 +19,7 @@ CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
 except:
-    pass
+    DEV_API_KEY = None
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
 _user_token_var = ContextVar("user_token", default=None)
