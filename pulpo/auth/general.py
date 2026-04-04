@@ -1,87 +1,13 @@
+# pulpo/tokens.py
+import time
+import httpx
 import requests
 import jwt
-from jwt import PyJWKClient
-import time
-from cryptography.x509 import load_pem_x509_certificate
-from cryptography.hazmat.backends import default_backend
-from functools import lru_cache
-from fastapi import HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime
 from contextvars import ContextVar
 
-from pulpo.util.util import require_env
+from pulpo.auth.back import get_token_exchange
 from pulpo.logueador import log
 
-# ==========================
-# 🔧 LOG CONFIG
-# ==========================
-log_time = datetime.now().isoformat(timespec='minutes')
-log.set_propagate(True)
-log.set_log_file(f"log/pulpo[{log_time}].log")
-log.set_log_level(require_env("log_level"))
-
-# ==========================
-# 🔐 CONFIGURACIÓN GLOBAL
-# ==========================
-KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
-REALM = require_env("SEC_REALM")
-CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
-CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
-
-bearer_scheme = HTTPBearer(auto_error=True)
-
-
-
-"""
-Generacion de token
-
-TOKEN=$(curl -s -X POST \
-  "https://seguridad.merocomsolutions.com/realms/CompAI/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=Contabilidad" \
-  -d "client_secret=ZTp7gW3N3krrlP9xzPVJz3k0e9ogYVmt" \
-  -d "username=pepe" \
-  -d "password=pepe" \
-  -d "totp=474624" | jq -r '.access_token')
-
-echo $TOKEN
-
-Ejecuta esto en alcazar por cada uno de los micros para los que necesites un token de acceso 
-    te dará un token que tiene 730 días de caducidad 
- 
-RESPONSE=$(curl -s -X POST \
-  "https://seguridad.merocomsolutions.com/realms/CompAI/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=Contabilidad" \
-  -d "client_secret=ZTp7gW3N3krrlP9xzPVJz3k0e9ogYVmt" \
-  -d "username=pepe" \
-  -d "password=pepe" \
-  -d "totp=474624")
-
-ACCESS=$(echo "$RESPONSE" | jq -r '.access_token')
-REFRESH=$(echo "$RESPONSE" | jq -r '.refresh_token')
-REFRESH_EXP=$(echo "$RESPONSE" | jq -r '.refresh_expires_in')
-
-echo $ACCESS
-echo
-echo $REFRESH
-echo
-echo $REFRESH_EXP
-    
-
- """
-
-
-
-# ======================================
-# CACHE GLOBAL TOKENS 
-# =====================================
-
-# Tokens inter-micro tras un exchange, evita pedir tokens cada vez
-_micro_token_cache = {} 
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
 _user_token_var = ContextVar("user_token", default=None)
@@ -97,96 +23,84 @@ def get_user_token() -> str:
         raise RuntimeError("No hay token en el contexto de usuario")
     return token
 
-# ==========================
-# 🔑 JWKS CLIENT (CACHEADO)
-# ==========================
-@lru_cache(maxsize=1)
-def _get_jwks_client() -> PyJWKClient:
-    return PyJWKClient(
-        f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/certs",
-        cache_keys=True,
-    )
 
-# ==========================
-# ✔ VALIDACIÓN DE TOKENS (PARA MICROS)
-# ==========================
-async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
-) -> dict:
+class MicroTokenManager:
+    def __init__(self, client_id, client_secret, get_user_token_func):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.get_user_token_func = get_user_token_func
+        self.cached = None
 
-    token = credentials.credentials
-    expected_issuer = f"{KEYCLOAK_URL}/realms/{REALM}"
+    def _expired(self):
+        return not self.cached or time.time() > self.cached["exp"] - 10
 
-    try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
-        decoded: dict = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=expected_issuer,
-            options={"verify_exp": True, "verify_aud": False},
+    def get_token(self):
+        if self._expired():
+            self.refresh()
+        return self.cached["token"]
+
+    def refresh(self):
+        user_token = self.get_user_token_func()
+        result = get_token_exchange(
+            self.client_id,
+            self.client_secret,
+            user_token
         )
+        self.cached = {
+            "token": result,
+            "exp": time.time() + 60  # o result.expires_in si lo devuelves
+        }
+        return self.cached["token"]
+    
 
-    except jwt.ExpiredSignatureError:
-        log.warning("Token expirado")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expirado.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+############################################
+#   Cliente http genérico con reintentos
+############################################
 
-    except jwt.InvalidTokenError as e:
-        log.warning(f"Token invalido {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token inválido: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+class MicroHttpClient:
+    def __init__(self, token_manager):
+        self.tm = token_manager
 
-    if decoded.get("azp") != CLIENT_ID_FRONT:
-        log.warning(
-            f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}')"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}').",
-        )
+    # ----------------------------
+    # 🔧 Core request (SIN CAMBIOS)
+    # ----------------------------
+    def _request(self, method, url, **kwargs):
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {self.tm.get_token()}"
 
-    log.info(
-        f"Token válido para usuario '{decoded.get('preferred_username')}' "
-        f"con roles: {decoded.get('realm_access', {}).get('roles', [])}"
-    )
+        resp = httpx.request(method, url, headers=headers, **kwargs)
 
-    set_user_token(token)
+        # Si el token caducó → refrescamos y reintentamos
+        if resp.status_code == 401:
+            headers["Authorization"] = f"Bearer {self.tm.refresh()}"
+            resp = httpx.request(method, url, headers=headers, **kwargs)
 
-    return decoded
+        resp.raise_for_status()
+        return resp
 
-# ==========================
-# 🔄 TOKEN EXCHANGE + CACHÉ
-# ==========================
-def get_token_exchange(target_client_id, target_client_secret, subject_token):
+    # ----------------------------
+    # 📌 Helpers amigables
+    # ----------------------------
+    def get(self, url, params=None, **kwargs):
+        return self._request("GET", url, params=params, **kwargs).json()
 
-    key = f"{target_client_id}:{target_client_secret}:{subject_token}"
-    now = time.time()
+    def post(self, url, json=None, **kwargs):
+        return self._request("POST", url, json=json, **kwargs).json()
 
-    # ✔ Token cacheado
-    cached = _micro_token_cache.get(key)
-    if cached and now < cached["exp"] - 5:
-        return cached["token"]
+    def put(self, url, json=None, **kwargs):
+        return self._request("PUT", url, json=json, **kwargs).json()
 
-    # ✔ Token nuevo
-    auth_origen = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
-    auth_origen.token = subject_token
+    def delete(self, url, **kwargs):
+        r = self._request("DELETE", url, **kwargs)
+        if r.status_code == 204:
+            return None
+        return r.json()
 
-    auth_destino = Auth(KEYCLOAK_URL, REALM, target_client_id, target_client_secret)
-    result = auth_destino.exchange_token_from(auth_origen)
-
-    new_token = result["access_token"]
-    exp = now + result.get("expires_in", 60)
-
-    _micro_token_cache[key] = {"token": new_token, "exp": exp}
-    return new_token
-
+    def post_file(self, url, file_path, content_type="application/json"):
+        with open(file_path, "rb") as f:
+            files = {"file": (file_path, f, content_type)}
+            return self.request("POST", url, files=files)
+    
 
 # ==========================
 # 🔐 CLASE AUTH (COMPLETA, SIN CAMBIOS FUNCIONALES)
@@ -387,44 +301,3 @@ class Auth:
 
     def __repr__(self):
         return f"Auth(realm={self.realm}, client_id={self.client_id}, has_token={bool(self.token)})"
-
-
-# ============================================================
-# 📌 DEMO (Opción B: se mantiene dentro del fichero)
-# ============================================================
-if __name__ == "__main__":
-
-    print("🔐 EJEMPLO DE USO DE LA CLASE AUTH")
-    print("=" * 70)
-
-    KEYCLOAK_URL = "https://seguridad.merocomsolutions.com"
-    REALM = "master"
-    CLIENT_ID = "informes"
-    CLIENT_SECRET = "M5DaowmNZJR4t6MrFxX27Y7CNTyxR0bC"
-    USERNAME = "dos"
-    PASSWORD = "dos"
-
-    try:
-        print("\n📱 PASO 1: Login con OTP")
-        print("-" * 70)
-        auth = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
-
-        otp = input("🔢 Código OTP: ")
-        token_response = auth.login(USERNAME, PASSWORD, otp)
-
-        print("✅ Login exitoso")
-        print(f"   Usuario: {token_response['decoded_token']['preferred_username']}")
-        print(f"   Expira en: {token_response['expires_in']}s")
-        print(f"   Token: {token_response['access_token'][:50]}...")
-
-        print("\n🔄 PASO 4: Token Exchange (mismo cliente)")
-        print("-" * 70)
-        auth2 = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
-        token_response2 = auth2.exchange_token_from(auth)
-
-        print("✅ Token exchange exitoso")
-        print(f"   Nuevo token: {token_response2['access_token'][:50]}...")
-
-        # etc...
-    except Exception as e:
-        print(f"\n❌ ERROR: {e}")
