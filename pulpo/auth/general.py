@@ -72,10 +72,9 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
 
 
 class MicroTokenManager:
-    def __init__(self, client_id, client_secret, get_user_token_func):
+    def __init__(self, client_id, client_secret):
         self.client_id = client_id
         self.client_secret = client_secret
-        self.get_user_token_func = get_user_token_func
         self.cached = None
 
     def _expired(self):
@@ -87,11 +86,10 @@ class MicroTokenManager:
         return self.cached["token"]
 
     def refresh(self):
-        user_token = self.get_user_token_func()
         result = get_token_exchange(
             self.client_id,
             self.client_secret,
-            user_token
+            get_user_token()
         )
         self.cached = {
             "token": result,

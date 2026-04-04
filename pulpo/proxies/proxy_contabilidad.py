@@ -9,11 +9,10 @@ Cliente de contabilidad: La llamada es así:
     
 """
 
-import httpx
 from typing import Optional, List
 from datetime import date
 
-from pulpo.auth.general import MicroTokenManager, MicroHttpClient, get_user_token
+from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
 CONTABILIDAD_URL = require_env("CONTABILIDAD_URL")
@@ -26,8 +25,7 @@ class ContabilidadClient:
 
         tm = MicroTokenManager(
             client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            get_user_token_func=get_user_token
+            client_secret=CLIENT_SECRET
         )
         self.http = MicroHttpClient(tm)
         self.base_url = CONTABILIDAD_URL
@@ -35,7 +33,6 @@ class ContabilidadClient:
     # ======================================================
     # PGC
     # ======================================================
-
     def crear_cuenta_contable(
         self,
         code: str,
