@@ -93,6 +93,9 @@ async def verify_token(
     # ==========================
     # 🚀 MODO DEV: API KEY
     # ==========================
+
+    log.debug(f"APP_ENV={APP_ENV}, cred: {credentials.scheme.lower()}, DEV_API_KEY={'set' if DEV_API_KEY else 'not set'}")
+
     if APP_ENV == "dev" and credentials:
         if credentials.scheme.lower() == "apikey":
             if credentials.credentials == DEV_API_KEY:
