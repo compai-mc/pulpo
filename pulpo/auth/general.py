@@ -7,6 +7,15 @@ from contextvars import ContextVar
 
 from pulpo.auth.back import get_token_exchange
 from pulpo.logueador import log
+from pulpo.util.util import require_env
+
+# ==========================
+# 🔐 CONFIGURACIÓN GLOBAL
+# ==========================
+KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
+REALM = require_env("SEC_REALM")
+CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
+CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
 
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
@@ -22,6 +31,38 @@ def get_user_token() -> str:
         log.warning("No hay token en el contexto de usuario")
         raise RuntimeError("No hay token en el contexto de usuario")
     return token
+
+
+
+# Tokens inter-micro tras un exchange, evita pedir tokens cada vez
+_micro_token_cache = {} 
+
+# ==========================
+# 🔄 TOKEN EXCHANGE + CACHÉ
+# ==========================
+def get_token_exchange(target_client_id, target_client_secret, subject_token):
+
+    key = f"{target_client_id}:{target_client_secret}:{subject_token}"
+    now = time.time()
+
+    # ✔ Token cacheado
+    cached = _micro_token_cache.get(key)
+    if cached and now < cached["exp"] - 5:
+        return cached["token"]
+
+    # ✔ Token nuevo
+    auth_origen = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
+    auth_origen.token = subject_token
+
+    auth_destino = Auth(KEYCLOAK_URL, REALM, target_client_id, target_client_secret)
+    result = auth_destino.exchange_token_from(auth_origen)
+
+    new_token = result["access_token"]
+    exp = now + result.get("expires_in", 60)
+
+    _micro_token_cache[key] = {"token": new_token, "exp": exp}
+    return new_token
+
 
 
 class MicroTokenManager:
