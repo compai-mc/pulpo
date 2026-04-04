@@ -86,6 +86,7 @@ async def verify_token(
     token = credentials.credentials
     expected_issuer = f"{KEYCLOAK_URL}/realms/{REALM}"
 
+    log.debug(f"verificando {credentials}")
 
     # ==========================
     # 🚀 MODO DEV: API KEY
@@ -104,7 +105,6 @@ async def verify_token(
                     "dev_mode": True
                 }
     # ==========================
-
 
 
     try:
