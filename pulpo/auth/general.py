@@ -15,16 +15,19 @@ KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
 REALM = require_env("SEC_REALM")
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
 CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
-DEV_API_KEY = require_env("DEV_API_KEY")
+
+try:
+    DEV_API_KEY = require_env("DEV_API_KEY")
+except:
+    pass
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
 _user_token_var = ContextVar("user_token", default=None)
-_user_token_decoded = ContextVar("user_token_decoded", default=None)
 
 # Funciones para manipular el token de usuario
-def set_user_token(token: str, decoded = None):
+def set_user_token(token: str):
     _user_token_var.set(token)
-    _user_token_decoded.set(decoded)
+
 
 def get_user_token() -> str:
     token = _user_token_var.get()

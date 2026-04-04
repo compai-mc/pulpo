@@ -19,7 +19,11 @@ log.set_log_level(require_env("log_level"))
 
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
 APP_ENV = require_env("APP_ENV")
-DEV_API_KEY = require_env("DEV_API_KEY")
+
+try:
+    DEV_API_KEY = require_env("DEV_API_KEY")
+except:
+    pass
 
 bearer_scheme = HTTPBearer(auto_error=True)
 
