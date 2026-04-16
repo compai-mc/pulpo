@@ -3,10 +3,12 @@
 """
 Así se llamaría desde un front:
 
-from pulpo.auth_front import front_login, get_valid_access_token
+from pulpo.auth.front import front_login, get_valid_access_token
 
 # Login inicial
-front_login("pepe", "pepe", otp_code="123456")
+token = front_login("pepe", "pepe", otp_code="123456")
+
+
 
 #  Instanciar el cliente de contabilidad como siempre
 contabilidad = ContabilidadClient()
