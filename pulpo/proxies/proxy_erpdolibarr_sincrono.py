@@ -1,88 +1,69 @@
 import httpx
 from typing import Any, Dict, Optional, List
+import urllib.parse
+
 from pulpo.util.util import require_env
+from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 
-#from config import config, config_global
+CLIENT_ID = require_env("CLIENT_ID_ERPDOLIBARR")
+CLIENT_SECRET = require_env("CLIENT_SECRET_ERPDOLIBARR")
 
-def _float_env(var_name: str) -> float | None:
-    """Devuelve el valor float de una variable de entorno, o None si no existe o no es válido."""
-    value = require_env(var_name)
-    if value is None:
-        print(f"ℹ️ {var_name} no definida.")
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        print(f"⚠️ Valor inválido para {var_name}: '{value}'.")
-        return None
-
-
-ERP_TIMEOUT_CONNECT = _float_env("ERP_TIMEOUT_CONNECT")
-ERP_TIMEOUT_READ =  _float_env("ERP_TIMEOUT_READ")
-ERP_TIMEOUT_WRITE =  _float_env("ERP_TIMEOUT_WRITE")
-ERP_TIMEOUT_POOL = _float_env("ERP_TIMEOUT_POOL")
-
-URL_DOLIBARR = require_env("ERPDOLIBARR_URL")
-API_KEY_DOLIBARR = require_env("API_KEY_DOLIBARR")
 
 class ERPProxySincrono:
+
     def __init__(self, base_url: str, api_key: Optional[str] = None):
+
         self.base_url = base_url.rstrip("/")
-        headers = {"Content-Type": "application/json"}
+        self.headers = {
+            "Content-Type": "application/json"
+        }
+
         if api_key:
-            headers["DOLAPIKEY"] = api_key
+            self.headers["DOLAPIKEY"] = api_key
 
-        timeout = httpx.Timeout(
-            connect=ERP_TIMEOUT_CONNECT,
-            read=ERP_TIMEOUT_READ,
-            write=ERP_TIMEOUT_WRITE,
-            pool=ERP_TIMEOUT_POOL,
+        self.tm = MicroTokenManager(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
         )
-        self.client = httpx.Client(base_url=self.base_url, timeout=timeout, headers=headers)
 
-    def close(self):
-        self.client.close()
+        self.client = MicroHttpClient(self.tm)
 
     # ---------------- Orders ----------------
     def pedidos(self, fecha: str) -> Dict[str, Any]:
-        r = self.client.get(f"/orders/{fecha}/url")
-        return r.json()
+        return  self.client.get(
+            f"{self.base_url}/orders/{fecha}/url",
+            headers=self.headers
+        )
 
     def pedidos_producto_cliente_mes(self, fecha: str) -> Dict[str, Any]:
-        r = self.client.get(f"/orders/group-by-product-client-month/{fecha}/url")
-        return r.json()
+        return self.client.get(f"{self.base_url}/orders/group-by-product-client-month/{fecha}/url",
+                            headers=self.headers)
 
     def pedidos_sync(self) -> Dict[str, Any]:
-        r = self.client.post("/orders/sync")
-        return r.json()
+        return self.client.post(f"{self.base_url}/orders/sync", headers=self.headers)
 
     # ---------------- Products ----------------
     def productos(self) -> List[Dict[str, Any]]:
-        r = self.client.get("/products")
-        return r.json()
+        return self.client.get(
+            f"{self.base_url}/products", 
+            headers=self.headers
+            )
 
     def obtener_stock_producto_codificado(self, product_ref: str) -> Dict[str, Any]:
 
-        import urllib.parse
         ref_encoded = urllib.parse.quote(product_ref, safe="")
-        r = self.client.get(f"/products/{ref_encoded}/stock")
-        return r.json()
-    
+        return self.client.get(f"{self.base_url}/products/{ref_encoded}/stock", headers=self.headers)    
     
     def obtener_stock_producto(self, product_ref: str) -> Dict[str, Any]:
-        r = self.client.get(f"/products/{product_ref}/stock")
-        return r.json()
-
+        return self.client.get(f"{self.base_url}/products/{product_ref}/stock", headers=self.headers)
 
     # ---------------- Clients ----------------
     def clientes(self) -> List[Dict[str, Any]]:
-        r = self.client.get("/clients")
-        return r.json()
+        return self.client.get(f"{self.base_url}/clients", headers=self.headers)
 
     # ---------------- Proposal ----------------
     def crear_presupuesto(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        r = self.client.post("/proposal", json=payload)
-        return r.json()
+        return self.client.post(f"{self.base_url}/proposal", json=payload, headers=self.headers)
 
     def proposal_create_document(self, name: str) -> Dict[str, Any]:
         """
@@ -94,9 +75,10 @@ class ERPProxySincrono:
             "download_url": "..."
         }
         """
-        r = self.client.post(f"/proposal/{name}/create/document")
-        return r.json()
-
+        return self.client.post(
+            f"{self.base_url}/proposal/{name}/create/document",
+            headers=self.headers
+            )
 
     def confirmar_propuesta(self, proposal_id: int, validate_order: bool = False) -> Dict[str, Any]:
         """
@@ -107,9 +89,11 @@ class ERPProxySincrono:
         params = {"validate_order": str(validate_order).lower()}
 
         try:
-            r = self.client.post(f"/proposal/{proposal_id}/confirm", params=params)
-            r.raise_for_status()
-            return r.json()
+            return self.client.post(
+                        f"{self.base_url}/proposal/{proposal_id}/confirm", 
+                        params=params, 
+                        headers=self.headers)
+            
         except httpx.HTTPStatusError as e:
             return {
                 "error": e.response.text,
@@ -117,6 +101,7 @@ class ERPProxySincrono:
                 "http_status": e.response.status_code,
                 "url": str(e.request.url),
             }
+        
         except httpx.RequestError as e:
             return {
                 "error": str(e),
@@ -131,9 +116,11 @@ class ERPProxySincrono:
         Endpoint: POST /proposal/{proposal_ref}/validate
         """
         try:
-            r = self.client.post(f"/proposal/{proposal_ref}/validate")
-            r.raise_for_status()
-            return r.json()
+            return self.client.post(
+                f"{self.base_url}/proposal/{proposal_ref}/validate",
+                headers=self.headers
+            )
+        
         except httpx.HTTPStatusError as e:
             return {
                 "error": e.response.text,
@@ -141,6 +128,7 @@ class ERPProxySincrono:
                 "http_status": e.response.status_code,
                 "url": str(e.request.url),
             }
+        
         except httpx.RequestError as e:
             return {
                 "error": str(e),
@@ -150,19 +138,25 @@ class ERPProxySincrono:
 
 
     def download_proposal_document(self, name: str) -> bytes:
-        """Descarga directa del PDF binario."""
-        r = self.client.get(f"/proposal/{name}/document/download")
-        return r.content if r.status_code == 200 else b""
+
+        r = self.client._request(
+            "GET",
+            f"{self.base_url}/proposal/{name}/document/download",
+            headers=self.headers
+        )
+
+        return r.content
 
     # ---------------- Health ----------------
     def health(self) -> Dict[str, Any]:
-        r = self.client.get("/health")
-        return r.json()
+        return self.client.get(f"{self.base_url}/health", headers=self.headers)
 
 
 # ---------------- Ejemplo de uso ----------------
 if __name__ == "__main__":
     
+
+    pass
 
     """ doc_info = client.proposal_create_document("(PROV10384)")
         print("Info documento:", doc_info)
@@ -174,11 +168,11 @@ if __name__ == "__main__":
             print("PDF guardado en propuesta.pdf")
 
         client.close()
-    """
+
 
     client = ERPProxySincrono(URL_DOLIBARR, API_KEY_DOLIBARR)
     unco = "(C-1730)_ME0000001-1-899"
 
     a = client.obtener_stock_producto(unco)
     print(a)
-
+    """

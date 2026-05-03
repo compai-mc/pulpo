@@ -64,10 +64,13 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
     result = auth_destino.exchange_token_from(auth_origen)
 
     new_token = result["access_token"]
-    exp = now + result.get("expires_in")
+
+    expires_in = result.get("expires_in")
     if not expires_in:
         log.warning("⚠ Token exchange sin expires_in — usando fallback 300s")
         expires_in = 300
+
+    exp = now + expires_in
 
     _micro_token_cache[key] = {"token": new_token, "exp": exp}
     return new_token
@@ -75,13 +78,21 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
 
 
 class MicroTokenManager:
-    def __init__(self, client_id, client_secret):
+
+    def __init__(self, client_id, client_secret, cache_seconds = 300):
+
         self.client_id = client_id
         self.client_secret = client_secret
+        self.cache_seconds = cache_seconds
         self.cached = None
 
     def _expired(self):
-        return not self.cached or time.time() > self.cached["exp"] - 10
+
+        return (
+            not self.cached
+            or time.time() > self.cached["exp"] - 10
+        )
+        
 
     def get_token(self):
         if self._expired():
@@ -89,16 +100,21 @@ class MicroTokenManager:
         return self.cached["token"]
 
     def refresh(self):
-        result = get_token_exchange(
+
+        token = get_token_exchange(
             self.client_id,
             self.client_secret,
             get_user_token()
         )
+
         self.cached = {
-            "token": result,
-            "exp": time.time() + 60  # o result.expires_in si lo devuelves
+            "token": token,
+            "exp": time.time() + self.cache_seconds
         }
-        return self.cached["token"]
+
+        return token
+
+
     
 
 ############################################
@@ -113,7 +129,10 @@ class MicroHttpClient:
     # 🔧 Core request (SIN CAMBIOS)
     # ----------------------------
     def _request(self, method, url, **kwargs):
-        headers = kwargs.pop("headers", {})
+
+
+        headers = dict(kwargs.pop("headers", {}))
+
         headers["Authorization"] = f"Bearer {self.tm.get_token()}"
 
         resp = httpx.request(method, url, headers=headers, **kwargs)
@@ -147,8 +166,12 @@ class MicroHttpClient:
     def post_file(self, url, file_path, content_type="application/json"):
         with open(file_path, "rb") as f:
             files = {"file": (file_path, f, content_type)}
-            return self.request("POST", url, files=files)
-    
+            return self._request(
+                "POST",
+                url,
+                files=files
+            )
+                
 
 # ==========================
 # 🔐 CLASE AUTH (COMPLETA, SIN CAMBIOS FUNCIONALES)

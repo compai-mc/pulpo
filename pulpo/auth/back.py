@@ -1,3 +1,28 @@
+"""
+POner seguridad en un backend
+
+from pulpo.auth.back import verify_token
+
+
+app = FastAPI(
+    title="Motor Contable",
+    lifespan=lifespan,
+    dependencies=[Depends(verify_token)] # para que se llame a verify_token en todos las funciones
+    )
+
+
+async def health(
+    full: Optional[bool] = Query(default=False),
+    token_data=Depends(verify_token)  # Hay que poner esto SOLO si se quiere usar el token (gestionar permisos)
+):
+
+
+"""
+
+
+
+
+
 import jwt
 from jwt import PyJWKClient
 from functools import lru_cache
