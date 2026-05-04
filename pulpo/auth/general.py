@@ -15,6 +15,7 @@ KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
 REALM = require_env("SEC_REALM")
 CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
 CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
+TIMEOUT_HTTP_CLIENT = int(require_env("TIMEOUT_HTTP_CLIENT"))
 
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
@@ -122,8 +123,9 @@ class MicroTokenManager:
 ############################################
 
 class MicroHttpClient:
-    def __init__(self, token_manager):
+    def __init__(self, token_manager, timeout = TIMEOUT_HTTP_CLIENT):
         self.tm = token_manager
+        self.timeout = timeout
 
     # ----------------------------
     # 🔧 Core request (SIN CAMBIOS)
@@ -135,7 +137,7 @@ class MicroHttpClient:
 
         headers["Authorization"] = f"Bearer {self.tm.get_token()}"
 
-        resp = httpx.request(method, url, headers=headers, **kwargs)
+        resp = httpx.request(method, url, headers=headers, timeout=self.timeout, **kwargs)
 
         # Si el token caducó → refrescamos y reintentamos
         if resp.status_code == 401:
