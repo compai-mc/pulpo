@@ -57,10 +57,10 @@ def get_token_exchange(target_client_id, target_client_secret, subject_token):
         return cached["token"]
 
     # ✔ Token nuevo
-    auth_origen = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
+    auth_origen = Auth(base_url = KEYCLOAK_URL, realm = REALM, client_id = CLIENT_ID_FRONT, client_secret = CLIENT_SECRET_FRONT)
     auth_origen.token = subject_token
 
-    auth_destino = Auth(KEYCLOAK_URL, REALM, target_client_id, target_client_secret)
+    auth_destino = Auth(base_url = KEYCLOAK_URL, realm = REALM, client_id = target_client_id, client_secret = target_client_secret)
     result = auth_destino.exchange_token_from(auth_origen)
 
     new_token = result["access_token"]
@@ -177,7 +177,7 @@ class MicroHttpClient:
 # 🔐 CLASE AUTH (COMPLETA, SIN CAMBIOS FUNCIONALES)
 # ==========================
 class Auth:
-    def __init__(self, base_url, realm, client_id, client_secret):
+    def __init__(self, client_id , client_secret , base_url = KEYCLOAK_URL, realm = REALM):
         self.base_url = base_url
         self.realm = realm
         self.token_url = f"{base_url}/realms/{realm}/protocol/openid-connect/token"
@@ -229,6 +229,49 @@ class Auth:
             "expires_in": token_data.get("expires_in"),
             "token_type": token_data.get("token_type", "Bearer"),
         }
+
+    
+    def login_service(self):
+
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+
+        response = requests.post(
+            self.token_url,
+            data=data,
+            headers=headers
+        )
+
+        if response.status_code != 200:
+            log.error(
+                f"Error {response.status_code}: {response.text}"
+            )
+            raise Exception(
+                f"Error {response.status_code}: {response.text}"
+            )
+
+        token_data = response.json()
+
+        self.token = token_data.get("access_token")
+        self.decoded_token = self.__decode_jwt(self.token)
+
+        # Aqui ponemos el token recien creado
+        set_user_token(self.token)
+
+        return {
+            "access_token": self.token,
+            "decoded_token": self.decoded_token,
+            "expires_in": token_data.get("expires_in"),
+            "token_type": token_data.get("token_type", "Bearer"),
+        }
+
 
     # ==========================
     # REFRESH

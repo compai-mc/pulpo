@@ -51,7 +51,7 @@ _front_tokens = {
 def front_login(username: str, password: str, otp_code=None):
     global _front_tokens
 
-    auth = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
+    auth = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID_FRONT, client_secret=CLIENT_SECRET_FRONT)
     result = auth.login(username, password, otp_code)
 
     # Guardamos todo
@@ -75,7 +75,7 @@ def front_refresh_tokens():
         log.error("No hay refresh token disponible para hacer refresh. Debes hacer login.")
         raise RuntimeError("No hay refresh token, debe hacer login.")
 
-    auth = Auth(KEYCLOAK_URL, REALM, CLIENT_ID_FRONT, CLIENT_SECRET_FRONT)
+    auth = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID_FRONT, client_secret=CLIENT_SECRET_FRONT)
     auth.refresh_token = _front_tokens["refresh_token"]
 
     result = auth.refresh_access_token()

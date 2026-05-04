@@ -196,7 +196,7 @@ if __name__ == "__main__":
     try:
         print("\n📱 PASO 1: Login con OTP")
         print("-" * 70)
-        auth = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
+        auth = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
 
         otp = input("🔢 Código OTP: ")
         token_response = auth.login(USERNAME, PASSWORD, otp)
@@ -208,7 +208,7 @@ if __name__ == "__main__":
 
         print("\n🔄 PASO 4: Token Exchange (mismo cliente)")
         print("-" * 70)
-        auth2 = Auth(KEYCLOAK_URL, REALM, CLIENT_ID, CLIENT_SECRET)
+        auth2 = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
         token_response2 = auth2.exchange_token_from(auth)
 
         print("✅ Token exchange exitoso")
