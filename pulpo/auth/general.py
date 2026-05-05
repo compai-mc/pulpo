@@ -13,13 +13,10 @@ from pulpo.util.util import require_env
 # ==========================
 KEYCLOAK_URL = require_env("SEC_KEYCLOAK_URL")
 REALM = require_env("SEC_REALM")
-CLIENT_ID_FRONT = require_env("CLIENT_ID_FRONT")
-CLIENT_SECRET_FRONT = require_env("CLIENT_SECRET_FRONT")
-TIMEOUT_HTTP_CLIENT = int(require_env("TIMEOUT_HTTP_CLIENT"))
 
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
-except:
+except Exception:
     DEV_API_KEY = None
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
@@ -46,45 +43,57 @@ _micro_token_cache = {}
 # ==========================
 def get_token_exchange(target_client_id, target_client_secret, subject_token):
 
-    if subject_token == DEV_API_KEY:
-        return DEV_API_KEY
-
-    key = f"{target_client_id}:{target_client_secret}:{subject_token}"
     now = time.time()
 
-    # ✔ Token cacheado
+    # Limpiando tokens caducados
+    expired = [
+        k for k, v in _micro_token_cache.items()
+        if now >= v["exp"]
+    ]
+
+    for k in expired:
+        del _micro_token_cache[k]
+
+    if subject_token == DEV_API_KEY:
+        return {
+            "access_token": DEV_API_KEY,
+            "expires_in": 365 * 24 * 3600,
+            "exp": now + 365 * 24 * 3600
+        }
+    
+    key = (target_client_id, subject_token)
+
     cached = _micro_token_cache.get(key)
     if cached and now < cached["exp"] - 10:
-        return cached["token"]
+        return cached
 
-    # ✔ Token nuevo
-    auth_origen = Auth(base_url = KEYCLOAK_URL, realm = REALM, client_id = CLIENT_ID_FRONT, client_secret = CLIENT_SECRET_FRONT)
-    auth_origen.token = subject_token
+    auth_destino = Auth(
+        client_id=target_client_id,
+        client_secret=target_client_secret
+    )
 
-    auth_destino = Auth(base_url = KEYCLOAK_URL, realm = REALM, client_id = target_client_id, client_secret = target_client_secret)
-    result = auth_destino.exchange_token_from(auth_origen)
+    result = auth_destino.exchange_token_from(subject_token)
 
-    new_token = result["access_token"]
+    expires_in = result.get("expires_in") or 300
 
-    expires_in = result.get("expires_in")
-    if not expires_in:
-        log.warning("⚠ Token exchange sin expires_in — usando fallback 300s")
-        expires_in = 300
+    cached = {
+        "access_token": result["access_token"],
+        "expires_in": expires_in,
+        "exp": now + expires_in
+    }
 
-    exp = now + expires_in
+    _micro_token_cache[key] = cached
 
-    _micro_token_cache[key] = {"token": new_token, "exp": exp}
-    return new_token
+    return cached
 
 
 
 class MicroTokenManager:
 
-    def __init__(self, client_id, client_secret, cache_seconds = 300):
+    def __init__(self, client_id, client_secret):
 
         self.client_id = client_id
         self.client_secret = client_secret
-        self.cache_seconds = cache_seconds
         self.cached = None
 
     def _expired(self):
@@ -96,8 +105,11 @@ class MicroTokenManager:
         
 
     def get_token(self):
+
         if self._expired():
+            log.info("Token expirado o no existe, refrescando...")
             self.refresh()
+
         return self.cached["token"]
 
     def refresh(self):
@@ -109,11 +121,11 @@ class MicroTokenManager:
         )
 
         self.cached = {
-            "token": token,
-            "exp": time.time() + self.cache_seconds
+            "token": token["access_token"],
+            "exp": token["exp"]
         }
 
-        return token
+        return token["access_token"]
 
 
     
@@ -123,26 +135,23 @@ class MicroTokenManager:
 ############################################
 
 class MicroHttpClient:
-    def __init__(self, token_manager, timeout = TIMEOUT_HTTP_CLIENT):
+    def __init__(self, token_manager):
         self.tm = token_manager
-        self.timeout = timeout
 
     # ----------------------------
     # 🔧 Core request (SIN CAMBIOS)
     # ----------------------------
     def _request(self, method, url, **kwargs):
 
-
         headers = dict(kwargs.pop("headers", {}))
-
         headers["Authorization"] = f"Bearer {self.tm.get_token()}"
-
-        resp = httpx.request(method, url, headers=headers, timeout=self.timeout, **kwargs)
+        resp = httpx.request(method, url, headers=headers, timeout=30, **kwargs)
 
         # Si el token caducó → refrescamos y reintentamos
         if resp.status_code == 401:
+            self.tm.cached = None
             headers["Authorization"] = f"Bearer {self.tm.refresh()}"
-            resp = httpx.request(method, url, headers=headers, **kwargs)
+            resp = httpx.request(method, url, headers=headers, timeout=30, **kwargs)
 
         resp.raise_for_status()
         return resp
@@ -212,7 +221,7 @@ class Auth:
             self.otp = otp_code
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(self.token_url, data=data, headers=headers)
+        response = requests.post(self.token_url, data=data, headers=headers, timeout=10)
 
         if response.status_code != 200:
             log.error(f"Error {response.status_code}: {response.text}")
@@ -248,7 +257,8 @@ class Auth:
         response = requests.post(
             self.token_url,
             data=data,
-            headers=headers
+            headers=headers,
+            timeout=10
         )
 
         if response.status_code != 200:
@@ -292,7 +302,7 @@ class Auth:
         }
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(self.token_url, data=data, headers=headers)
+        response = requests.post(self.token_url, data=data, headers=headers, timeout=10)
 
         if response.status_code != 200:
             log.error(f"Error al refrescar token {response.status_code}: {response.text}")
@@ -328,7 +338,7 @@ class Auth:
         }
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(self.logout_url, data=data, headers=headers)
+        response = requests.post(self.logout_url, data=data, headers=headers, timeout=10)
 
         self.token = ""
         self.refresh_token = ""
@@ -345,7 +355,7 @@ class Auth:
             raise ValueError("No hay token disponible.")
 
         headers = {"Authorization": f"Bearer {self.token}"}
-        response = requests.get(self.userinfo_url, headers=headers)
+        response = requests.get(self.userinfo_url, headers=headers, timeout=10)
 
         if response.status_code != 200:
             raise Exception(f"Error al obtener userinfo {response.status_code}: {response.text}")
@@ -376,23 +386,25 @@ class Auth:
     # ==========================
     # TOKEN EXCHANGE
     # ==========================
-    def exchange_token_from(self, source_auth):
-        if not source_auth.token:
-            log.error("Auth origen no tiene token para hacer exchange.")
-            raise ValueError("Auth origen no tiene token.")
+    def exchange_token_from(self, subject_token: str):
+
+        if not subject_token:
+            log.error("No hay subject_token para hacer exchange.")
+            raise ValueError("No hay subject_token.")
 
         data = {
             "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-            "subject_token": source_auth.token,
+            "subject_token": subject_token,
             "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
         }
 
+
         # Llamando a keycloak
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(self.token_url, data=data, headers=headers)
+        response = requests.post(self.token_url, data=data, headers=headers, timeout=10)
 
         if response.status_code != 200:
             log.error(f"Error en token exchange {response.status_code}: {response.text}")
