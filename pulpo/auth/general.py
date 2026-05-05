@@ -21,26 +21,8 @@ except RuntimeError:
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
 
-_user_token_var = ContextVar(
-    "user_token",
-    default=None
-)
 
 _service_token = None
-
-
-
-# Funciones para manipular el token de usuario
-def set_user_token(token: str):
-    _user_token_var.set(token)
-
-
-def get_user_token() -> str:
-    token = _user_token_var.get()
-    if not token:
-        log.warning("No hay token en el contexto de usuario")
-        raise RuntimeError("No hay token en el contexto de usuario")
-    return token
 
 
 def set_service_token(token: str):
@@ -140,7 +122,7 @@ class MicroTokenManager:
         token = get_token_exchange(
             self.client_id,
             self.client_secret,
-            get_user_token()
+            get_service_token()
         )
 
         self.cached = {
