@@ -16,11 +16,19 @@ REALM = require_env("SEC_REALM")
 
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
-except Exception:
+except RuntimeError:
     DEV_API_KEY = None
 
 # Token del usuario actual, necesario para no pasarlo por parámetros
-_user_token_var = ContextVar("user_token", default=None)
+
+_user_token_var = ContextVar(
+    "user_token",
+    default=None
+)
+
+_service_token = None
+
+
 
 # Funciones para manipular el token de usuario
 def set_user_token(token: str):
@@ -33,6 +41,21 @@ def get_user_token() -> str:
         log.warning("No hay token en el contexto de usuario")
         raise RuntimeError("No hay token en el contexto de usuario")
     return token
+
+
+def set_service_token(token: str):
+    global _service_token
+    _service_token = token
+
+
+def get_service_token() -> str:
+
+    if not _service_token:
+        raise RuntimeError(
+            "No hay token de servicio"
+        )
+
+    return _service_token
 
 
 # Tokens inter-micro tras un exchange, evita pedir tokens cada vez
@@ -275,7 +298,7 @@ class Auth:
         self.decoded_token = self.__decode_jwt(self.token)
 
         # Aqui ponemos el token recien creado
-        set_user_token(self.token)
+        set_service_token(self.token)
 
         return {
             "access_token": self.token,

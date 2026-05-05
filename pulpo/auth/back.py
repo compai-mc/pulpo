@@ -19,10 +19,6 @@ async def health(
 
 """
 
-
-
-
-
 import jwt
 from jwt import PyJWKClient
 from functools import lru_cache
@@ -32,7 +28,7 @@ from datetime import datetime
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
-from pulpo.auth.general import Auth, set_user_token
+from pulpo.auth.general import Auth, set_user_token, get_service_token
 
 # ==========================
 # 🔧 LOG CONFIG
@@ -49,7 +45,7 @@ APP_ENV = require_env("APP_ENV")
 
 try:
     DEV_API_KEY = require_env("DEV_API_KEY")
-except:
+except Exception:
     DEV_API_KEY = None
 
 bearer_scheme = HTTPBearer(auto_error=True)
@@ -107,75 +103,185 @@ def _get_jwks_client() -> PyJWKClient:
 # ✔ VALIDACIÓN DE TOKENS (PARA MICROS)
 # ==========================
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials = Security(
+        bearer_scheme
+    ),
 ) -> dict:
 
-    token = credentials.credentials
-    expected_issuer = f"{KEYCLOAK_URL}/realms/{REALM}"
+    incoming_token = credentials.credentials
+    expected_issuer = (
+        f"{KEYCLOAK_URL}/realms/{REALM}"
+    )
 
     # ==========================
     # 🚀 MODO DEV: API KEY
     # ==========================
-    if APP_ENV == "dev" and credentials:      
-        if credentials.credentials == DEV_API_KEY:
-            
-            log.warning("🔓 Acceso con API KEY (modo desarrollo)")
-            set_user_token(DEV_API_KEY)
+    if (
+        APP_ENV == "dev"
+        and incoming_token == DEV_API_KEY
+    ):
 
-            return {
-                "preferred_username": "dev_user",
-                "realm_access": {"roles": ["admin"]},
-                "azp": CLIENT_ID_FRONT,
-                "dev_mode": True
-            }
+        log.warning(
+            "🔓 Acceso con API KEY "
+            "(modo desarrollo)"
+        )
+
+        set_user_token(DEV_API_KEY)
+
+        return {
+            "preferred_username": "dev_user",
+            "realm_access": {
+                "roles": ["admin"]
+            },
+            "azp": CLIENT_ID_FRONT,
+            "dev_mode": True,
+        }
+
     # ==========================
-
+    # 🔐 VALIDAR TOKEN ENTRANTE
+    # ==========================
     try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+
+        signing_key = (
+            _get_jwks_client()
+            .get_signing_key_from_jwt(
+                incoming_token
+            )
+        )
+
         decoded: dict = jwt.decode(
-            token,
+            incoming_token,
             signing_key.key,
             algorithms=["RS256"],
             issuer=expected_issuer,
-            options={"verify_exp": True, "verify_aud": False},
+            options={
+                "verify_exp": True,
+                "verify_aud": False,
+            },
         )
 
     except jwt.ExpiredSignatureError:
+
         log.warning("Token expirado")
+
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=(
+                status.HTTP_401_UNAUTHORIZED
+            ),
             detail="Token expirado.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate":
+                "Bearer"
+            },
         )
 
     except jwt.InvalidTokenError as e:
-        log.warning(f"Token invalido {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token inválido: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
-    if decoded.get("azp") != CLIENT_ID_FRONT:
         log.warning(
-            f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}')"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Token no destinado a este servicio (azp recibido: '{decoded.get('azp')}').",
+            f"Token invalido: {e}"
         )
 
+        raise HTTPException(
+            status_code=(
+                status.HTTP_401_UNAUTHORIZED
+            ),
+            detail=(
+                f"Token inválido: {e}"
+            ),
+            headers={
+                "WWW-Authenticate":
+                "Bearer"
+            },
+        )
+
+    # ==========================
+    # 🎯 VALIDAR DESTINO (AUD)
+    # ==========================
+    try:
+
+        service_token = get_service_token()
+
+        service_claims = jwt.decode(
+            service_token,
+            options={
+                "verify_signature":
+                False
+            },
+        )
+
+        expected_client_id = (
+            service_claims.get("azp")
+        )
+
+        if not expected_client_id:
+            log.error(
+                "El token de servicio no contiene 'azp'"
+            )
+            raise RuntimeError(
+                "El token de servicio no contiene azp"
+            )
+
+    except Exception as e:
+
+        log.error(
+            "No se pudo obtener "
+            "la identidad del servicio: "
+            f"{e}"
+        )
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "Servicio mal inicializado "
+                "(falta login_service)."
+            ),
+        )
+
+    aud = decoded.get("aud") or []
+
+    if isinstance(aud, str):
+        aud = [aud]
+
+    if expected_client_id not in aud:
+
+        log.warning(
+            "Token no destinado "
+            f"a este servicio "
+            f"(esperado: "
+            f"'{expected_client_id}', "
+            f"aud recibido: {aud})"
+        )
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
+            detail=(
+                "Token no destinado "
+                f"a este servicio "
+                f"(esperado: "
+                f"'{expected_client_id}', "
+                f"aud recibido: {aud})."
+            ),
+        )
+
+    # ==========================
+    # ✅ OK
+    # ==========================
     log.info(
-        f"Token válido para usuario '{decoded.get('preferred_username')}' "
-        f"con roles: {decoded.get('realm_access', {}).get('roles', [])}"
+        f"Token válido para usuario "
+        f"'{decoded.get('preferred_username')}' "
+        f"con roles: "
+        f"{decoded.get('realm_access', {}).get('roles', [])}"
     )
 
-    set_user_token(token)
+    # Guardamos el token entrante
+    # para siguientes exchanges
+    set_user_token(incoming_token)
 
     return decoded
-
-
-
 
 
 # ============================================================
