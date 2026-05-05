@@ -48,19 +48,50 @@ _front_tokens = {
 # ===========================
 # 👤 LOGIN FRONT
 # ===========================
-def front_login(username: str, password: str, otp_code=None):
+def front_login(
+    username: str,
+    password: str,
+    otp_code=None,
+):
+
     global _front_tokens
 
-    auth = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID_FRONT, client_secret=CLIENT_SECRET_FRONT)
-    result = auth.login(username, password, otp_code)
+    auth = Auth(
+        base_url=KEYCLOAK_URL,
+        realm=REALM,
+        client_id=CLIENT_ID_FRONT,
+        client_secret=CLIENT_SECRET_FRONT,
+    )
 
-    # Guardamos todo
-    _front_tokens["access_token"] = result["access_token"]
-    _front_tokens["refresh_token"] = result["refresh_token"]
-    _front_tokens["access_exp"] = time.time() + result["expires_in"]
-    # Keycloak no envía refresh_expires_in en tu login. Lo obtenemos del token decodificado
-    _front_tokens["refresh_exp"] = result["decoded_token"].get("exp", 0) + 1800
+    result = auth.login(
+        username,
+        password,
+        otp_code,
+    )
 
+    _front_tokens["access_token"] = (
+        result["access_token"]
+    )
+
+    _front_tokens["refresh_token"] = (
+        result["refresh_token"]
+    )
+
+    _front_tokens["access_exp"] = (
+        time.time()
+        + result["expires_in"]
+    )
+
+    _front_tokens["refresh_exp"] = (
+        time.time()
+        + result["refresh_expires_in"]
+    )
+
+    # dejamos el token disponible
+    # para llamadas inmediatas
+    set_user_token(
+        result["access_token"]
+    )
 
     return result
 
@@ -69,20 +100,52 @@ def front_login(username: str, password: str, otp_code=None):
 # 🔄 REFRESH FRONT
 # ===========================
 def front_refresh_tokens():
+
     global _front_tokens
 
     if not _front_tokens["refresh_token"]:
-        log.error("No hay refresh token disponible para hacer refresh. Debes hacer login.")
-        raise RuntimeError("No hay refresh token, debe hacer login.")
 
-    auth = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID_FRONT, client_secret=CLIENT_SECRET_FRONT)
-    auth.refresh_token = _front_tokens["refresh_token"]
+        log.error(
+            "No hay refresh token disponible "
+            "para hacer refresh. "
+            "Debes hacer login."
+        )
+
+        raise RuntimeError(
+            "No hay refresh token. "
+            "Debe hacer login."
+        )
+
+    auth = Auth(
+        base_url=KEYCLOAK_URL,
+        realm=REALM,
+        client_id=CLIENT_ID_FRONT,
+        client_secret=CLIENT_SECRET_FRONT,
+    )
+
+    auth.refresh_token = (
+        _front_tokens["refresh_token"]
+    )
 
     result = auth.refresh_access_token()
 
-    _front_tokens["access_token"] = result["access_token"]
-    _front_tokens["refresh_token"] = result["refresh_token"]
-    _front_tokens["access_exp"] = time.time() + result["expires_in"]
+    _front_tokens["access_token"] = (
+        result["access_token"]
+    )
+
+    _front_tokens["refresh_token"] = (
+        result["refresh_token"]
+    )
+
+    _front_tokens["access_exp"] = (
+        time.time()
+        + result["expires_in"]
+    )
+
+    _front_tokens["refresh_exp"] = (
+        time.time()
+        + result["refresh_expires_in"]
+    )
 
     return result
 

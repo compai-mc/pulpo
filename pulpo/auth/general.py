@@ -19,11 +19,20 @@ try:
 except RuntimeError:
     DEV_API_KEY = None
 
-# Token del usuario actual, necesario para no pasarlo por parámetros
+_user_token_var = ContextVar(
+    "user_token",
+    default=None
+)
+
+def set_user_token(token: str):
+    _user_token_var.set(token)
+
+
+def get_user_token() -> str | None:
+    return _user_token_var.get()
 
 
 _service_token = None
-
 
 def set_service_token(token: str):
     global _service_token
@@ -243,7 +252,13 @@ class Auth:
             "decoded_token": self.decoded_token,
             "refresh_token": self.refresh_token,
             "expires_in": token_data.get("expires_in"),
-            "token_type": token_data.get("token_type", "Bearer"),
+            "refresh_expires_in": token_data.get(
+                "refresh_expires_in"
+            ),
+            "token_type": token_data.get(
+                "token_type",
+                "Bearer",
+            ),
         }
 
     
@@ -294,10 +309,17 @@ class Auth:
     # REFRESH
     # ==========================
     def refresh_access_token(self):
-        
+
         if not self.refresh_token:
-            log.error("No hay refresh token disponible para refrescar el access token.")
-            raise ValueError("Debe hacer login primero (no hay refresh token).")
+            log.error(
+                "No hay refresh token disponible "
+                "para refrescar el access token."
+            )
+
+            raise ValueError(
+                "Debe hacer login primero "
+                "(no hay refresh token)."
+            )
 
         data = {
             "grant_type": "refresh_token",
@@ -306,25 +328,60 @@ class Auth:
             "refresh_token": self.refresh_token,
         }
 
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(self.token_url, data=data, headers=headers, timeout=10)
+        headers = {
+            "Content-Type":
+            "application/x-www-form-urlencoded"
+        }
+
+        response = requests.post(
+            self.token_url,
+            data=data,
+            headers=headers,
+            timeout=10,
+        )
 
         if response.status_code != 200:
-            log.error(f"Error al refrescar token {response.status_code}: {response.text}")
-            raise Exception(f"Error al refrescar token {response.status_code}: {response.text}")
+
+            log.error(
+                f"Error al refrescar token "
+                f"{response.status_code}: "
+                f"{response.text}"
+            )
+
+            raise Exception(
+                f"Error al refrescar token "
+                f"{response.status_code}: "
+                f"{response.text}"
+            )
 
         token_data = response.json()
 
-        self.token = token_data.get("access_token")
-        self.refresh_token = token_data.get("refresh_token")
-        self.decoded_token = self.__decode_jwt(self.token)
+        self.token = token_data.get(
+            "access_token"
+        )
+
+        self.refresh_token = token_data.get(
+            "refresh_token"
+        )
+
+        self.decoded_token = (
+            self.__decode_jwt(
+                self.token
+            )
+        )
 
         return {
             "access_token": self.token,
             "decoded_token": self.decoded_token,
             "refresh_token": self.refresh_token,
-            "expires_in": token_data.get("expires_in"),
+            "expires_in": token_data.get(
+                "expires_in"
+            ),
+            "refresh_expires_in": token_data.get(
+                "refresh_expires_in"
+            ),
         }
+    
 
     # ==========================
     # LOGOUT

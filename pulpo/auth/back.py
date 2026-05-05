@@ -28,7 +28,7 @@ from datetime import datetime
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
-from pulpo.auth.general import Auth, set_service_token, get_service_token
+from pulpo.auth.general import Auth, set_service_token, get_service_token, set_user_token
 
 # ==========================
 # 🔧 LOG CONFIG
@@ -279,7 +279,8 @@ async def verify_token(
 
     # Guardamos el token entrante
     # para siguientes exchanges
-    set_service_token(incoming_token)
+    #set_service_token(incoming_token)
+    set_user_token(incoming_token)
 
     return decoded
 
