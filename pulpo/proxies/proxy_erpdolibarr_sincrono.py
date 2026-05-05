@@ -229,14 +229,12 @@ class ERPProxySincrono:
 
     def facturas_venta(self):
         return self._get(
-            "/invoices",
-            params={"type": "sales"}
+            "/invoices/sales"
         )
 
     def facturas_compra(self):
         return self._get(
-            "/invoices",
-            params={"type": "purchase"}
+            "/invoices/purchase"
         )
 
     def facturas_periodo(
