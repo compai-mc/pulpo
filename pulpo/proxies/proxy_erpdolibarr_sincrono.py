@@ -1,9 +1,9 @@
-import httpx
 from typing import Any, Dict, Optional, List
 import urllib.parse
 
 from pulpo.util.util import require_env
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
+
 
 CLIENT_ID = require_env("CLIENT_ID_ERPDOLIBARR")
 CLIENT_SECRET = require_env("CLIENT_SECRET_ERPDOLIBARR")
@@ -14,6 +14,7 @@ class ERPProxySincrono:
     def __init__(self, base_url: str, api_key: Optional[str] = None):
 
         self.base_url = base_url.rstrip("/")
+
         self.headers = {
             "Content-Type": "application/json"
         }
@@ -28,151 +29,265 @@ class ERPProxySincrono:
 
         self.client = MicroHttpClient(self.tm)
 
-    # ---------------- Orders ----------------
-    def pedidos(self, fecha: str) -> Dict[str, Any]:
-        return  self.client.get(
-            f"{self.base_url}/orders/{fecha}/url",
-            headers=self.headers
-        )
+    # ============================================================
+    # Helpers
+    # ============================================================
 
-    def pedidos_producto_cliente_mes(self, fecha: str) -> Dict[str, Any]:
-        return self.client.get(f"{self.base_url}/orders/group-by-product-client-month/{fecha}/url",
-                            headers=self.headers)
-
-    def pedidos_sync(self) -> Dict[str, Any]:
-        return self.client.post(f"{self.base_url}/orders/sync", headers=self.headers)
-
-    # ---------------- Products ----------------
-    def productos(self) -> List[Dict[str, Any]]:
+    def _get(self, path: str, **kwargs):
         return self.client.get(
-            f"{self.base_url}/products", 
-            headers=self.headers
-            )
-
-    def obtener_stock_producto_codificado(self, product_ref: str) -> Dict[str, Any]:
-
-        ref_encoded = urllib.parse.quote(product_ref, safe="")
-        return self.client.get(f"{self.base_url}/products/{ref_encoded}/stock", headers=self.headers)    
-    
-    def obtener_stock_producto(self, product_ref: str) -> Dict[str, Any]:
-        return self.client.get(f"{self.base_url}/products/{product_ref}/stock", headers=self.headers)
-
-    # ---------------- Clients ----------------
-    def clientes(self) -> List[Dict[str, Any]]:
-        return self.client.get(f"{self.base_url}/clients", headers=self.headers)
-
-    # ---------------- Proposal ----------------
-    def crear_presupuesto(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self.client.post(f"{self.base_url}/proposal", json=payload, headers=self.headers)
-
-    def proposal_create_document(self, name: str) -> Dict[str, Any]:
-        """
-        Devuelve JSON con metadata y base64 del PDF.
-        {
-            "filename": "...",
-            "content_type": "...",
-            "content_base64": "...",
-            "download_url": "..."
-        }
-        """
-        return self.client.post(
-            f"{self.base_url}/proposal/{name}/create/document",
-            headers=self.headers
-            )
-
-    def confirmar_propuesta(self, proposal_id: int, validate_order: bool = False) -> Dict[str, Any]:
-        """
-        Confirma una propuesta en el ERP Dolibarr y (opcionalmente) genera el pedido.
-
-        Endpoint: POST /proposal/{proposal_id}/confirm?validate_order={true|false}
-        """
-        params = {"validate_order": str(validate_order).lower()}
-
-        try:
-            return self.client.post(
-                        f"{self.base_url}/proposal/{proposal_id}/confirm", 
-                        params=params, 
-                        headers=self.headers)
-            
-        except httpx.HTTPStatusError as e:
-            return {
-                "error": e.response.text,
-                "status": "failed",
-                "http_status": e.response.status_code,
-                "url": str(e.request.url),
-            }
-        
-        except httpx.RequestError as e:
-            return {
-                "error": str(e),
-                "status": "failed",
-                "http_status": None,
-            }
-    
-    def validar_propuesta(self, proposal_ref: str) -> Dict[str, Any]:
-        """
-        Valida una propuesta en el ERP Dolibarr.
-
-        Endpoint: POST /proposal/{proposal_ref}/validate
-        """
-        try:
-            return self.client.post(
-                f"{self.base_url}/proposal/{proposal_ref}/validate",
-                headers=self.headers
-            )
-        
-        except httpx.HTTPStatusError as e:
-            return {
-                "error": e.response.text,
-                "status": "failed",
-                "http_status": e.response.status_code,
-                "url": str(e.request.url),
-            }
-        
-        except httpx.RequestError as e:
-            return {
-                "error": str(e),
-                "status": "failed",
-                "http_status": None,
-            }
-
-
-    def download_proposal_document(self, name: str) -> bytes:
-
-        r = self.client._request(
-            "GET",
-            f"{self.base_url}/proposal/{name}/document/download",
-            headers=self.headers
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
         )
 
-        return r.content
+    def _post(self, path: str, **kwargs):
+        return self.client.post(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
 
-    # ---------------- Health ----------------
-    def health(self) -> Dict[str, Any]:
-        return self.client.get(f"{self.base_url}/health", headers=self.headers)
+    def _patch(self, path: str, **kwargs):
+        return self.client.patch(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
 
+    # ============================================================
+    # Shipments
+    # ============================================================
 
-# ---------------- Ejemplo de uso ----------------
-if __name__ == "__main__":
-    
+    def shipments(self):
+        return self._get("/shipments")
 
-    pass
+    def shipment_parametro(
+        self,
+        shipment_id: int,
+        parametro: str
+    ):
+        return self._get(
+            f"/shipments/{shipment_id}/parametro/{parametro}"
+        )
 
-    """ doc_info = client.proposal_create_document("(PROV10384)")
-        print("Info documento:", doc_info)
+    def actualizar_shipment_parametro(
+        self,
+        shipment_id: int,
+        parametro: str,
+        valor: Any
+    ):
+        return self._patch(
+            f"/shipments/{shipment_id}/parametro/{parametro}",
+            json={"value": valor}
+        )
 
-        pdf_bytes = client.download_proposal_document("(PROV10384)")
-        if pdf_bytes:
-            with open("propuesta.pdf", "wb") as f:
-                f.write(pdf_bytes)
-            print("PDF guardado en propuesta.pdf")
+    # ============================================================
+    # Orders
+    # ============================================================
 
-        client.close()
+    def pedidos(self, fecha: str):
+        return self._get(f"/orders/{fecha}/url")
 
+    def pedidos_producto_cliente_mes(
+        self,
+        fecha: str
+    ):
+        return self._get(
+            f"/orders/group-by-product-client-month/{fecha}/url"
+        )
 
-    client = ERPProxySincrono(URL_DOLIBARR, API_KEY_DOLIBARR)
-    unco = "(C-1730)_ME0000001-1-899"
+    def pedidos_sync(self):
+        return self._post("/orders/sync")
 
-    a = client.obtener_stock_producto(unco)
-    print(a)
-    """
+    # ============================================================
+    # Products
+    # ============================================================
+
+    def productos(self):
+        return self._get("/products")
+
+    def producto(self, product_id: int):
+        return self._get(f"/products/{product_id}")
+
+    def producto_stock(self, product_ref: str):
+
+        ref = urllib.parse.quote(
+            product_ref,
+            safe=""
+        )
+
+        return self._get(
+            f"/products/{ref}/stock"
+        )
+
+    def producto_proveedores(
+        self,
+        product_id: int
+    ):
+        return self._get(
+            f"/products/{product_id}/suppliers"
+        )
+
+    def producto_clientes(
+        self,
+        product_id: int
+    ):
+        return self._get(
+            f"/products/{product_id}/orders/customers"
+        )
+
+    def producto_compras(
+        self,
+        product_id: int
+    ):
+        return self._get(
+            f"/products/{product_id}/orders/suppliers"
+        )
+
+    # ============================================================
+    # Clients
+    # ============================================================
+
+    def clientes(self):
+        return self._get("/clients")
+
+    def cliente_por_telefono(
+        self,
+        phone: str
+    ):
+        return self._get(
+            f"/clients/by-phone/{phone}"
+        )
+
+    def guardar_telefono_cliente(
+        self,
+        payload: dict
+    ):
+        return self._post(
+            "/client-phone",
+            json=payload
+        )
+
+    # ============================================================
+    # Contacts
+    # ============================================================
+
+    def contactos(self):
+        return self._get("/contacts")
+
+    # ============================================================
+    # Suppliers
+    # ============================================================
+
+    def proveedores(self):
+        return self._get("/suppliers")
+
+    def proveedor(
+        self,
+        supplier_id: int
+    ):
+        return self._get(
+            f"/suppliers/{supplier_id}"
+        )
+
+    # ============================================================
+    # Banks
+    # ============================================================
+
+    def bancos(self):
+        return self._get("/banks")
+
+    def movimientos_contables(self):
+        return self._get(
+            "/banks/accounting-movements"
+        )
+
+    def gastos_bancarios(self):
+        return self._get(
+            "/banks/expenses"
+        )
+
+    def cuenta_bancaria(
+        self,
+        account_id: int
+    ):
+        return self._get(
+            f"/banks/{account_id}"
+        )
+
+    def movimientos_cuenta(
+        self,
+        account_id: int
+    ):
+        return self._get(
+            f"/banks/{account_id}/lines"
+        )
+
+    # ============================================================
+    # Invoices
+    # ============================================================
+
+    def facturas_venta(self):
+        return self._get(
+            "/invoices",
+            params={"type": "sales"}
+        )
+
+    def facturas_compra(self):
+        return self._get(
+            "/invoices",
+            params={"type": "purchase"}
+        )
+
+    def facturas_periodo(
+        self,
+        start: str,
+        end: str
+    ):
+        return self._get(
+            "/invoices/by-date",
+            params={
+                "start": start,
+                "end": end
+            }
+        )
+
+    # ============================================================
+    # Proposal
+    # ============================================================
+
+    def crear_presupuesto(
+        self,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            "/proposal",
+            json=payload
+        )
+
+    def validar_propuesta(
+        self,
+        proposal_id: int
+    ):
+        return self._post(
+            f"/proposal/{proposal_id}/validate"
+        )
+
+    def confirmar_propuesta(
+        self,
+        proposal_id: int,
+        validate_order: bool = False
+    ):
+        return self._post(
+            f"/proposal/{proposal_id}/confirm",
+            params={
+                "validate_order": validate_order
+            }
+        )
+
+    # ============================================================
+    # Admin
+    # ============================================================
+
+    def health(self):
+        return self._get("/health")
