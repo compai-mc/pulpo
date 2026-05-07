@@ -126,6 +126,7 @@ class MicroTokenManager:
 
         return self.cached["token"]
 
+
     def refresh(self):
 
         token = get_token_exchange(
@@ -159,6 +160,13 @@ class MicroHttpClient:
 
         headers = dict(kwargs.pop("headers", {}))
         headers["Authorization"] = f"Bearer {self.tm.get_token()}"
+
+        user_token = get_user_token()
+
+        if user_token:
+            headers["X-User-Token"] = user_token
+
+
         resp = httpx.request(method, url, headers=headers, timeout=30, **kwargs)
 
         # Si el token caducó → refrescamos y reintentamos

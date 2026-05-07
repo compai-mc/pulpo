@@ -22,7 +22,7 @@ async def health(
 import jwt
 from jwt import PyJWKClient
 from functools import lru_cache
-from fastapi import HTTPException, Security, status
+from fastapi import HTTPException, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
 
@@ -103,6 +103,7 @@ def _get_jwks_client() -> PyJWKClient:
 # ✔ VALIDACIÓN DE TOKENS (PARA MICROS)
 # ==========================
 async def verify_token(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Security(
         bearer_scheme
     ),
@@ -111,6 +112,9 @@ async def verify_token(
     incoming_token = credentials.credentials
     expected_issuer = (
         f"{KEYCLOAK_URL}/realms/{REALM}"
+    )
+    user_token = request.headers.get(
+        "X-User-Token"
     )
 
     # ==========================
@@ -277,10 +281,10 @@ async def verify_token(
         f"{decoded.get('realm_access', {}).get('roles', [])}"
     )
 
-    # Guardamos el token entrante
-    # para siguientes exchanges
-    #set_service_token(incoming_token)
-    set_user_token(incoming_token)
+    if user_token:
+        set_user_token(user_token)
+    elif decoded.get("azp") == CLIENT_ID_FRONT:
+        set_user_token(incoming_token)
 
     return decoded
 
