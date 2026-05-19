@@ -46,6 +46,13 @@ class ERPProxySincrono:
             headers=self.headers,
             **kwargs
         )
+    
+    def _put(self, path: str, **kwargs):
+        return self.client.put(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
 
     def _patch(self, path: str, **kwargs):
         return self.client.patch(
@@ -249,6 +256,31 @@ class ERPProxySincrono:
                 "end": end
             }
         )
+    
+    def actualizar_conciliacion_factura(
+        self,
+        invoice_id: int,
+        estado=None,
+        fecha_conciliacion=None,
+        fecha_expiracion=None
+    ):
+        
+        payload = {}
+
+        if estado:
+            payload["estado"] = estado
+
+        if fecha_conciliacion:
+            payload["fecha_conciliacion"] = fecha_conciliacion.strftime("%Y-%m-%d %H:%M:%S")
+
+        if fecha_expiracion:
+            payload["fecha_expiracion"] = fecha_expiracion.strftime("%Y-%m-%d")
+
+        return self._put(
+            f"/invoices/{invoice_id}/conciliacion",
+            json=payload
+        )
+
 
     # ============================================================
     # Proposal
