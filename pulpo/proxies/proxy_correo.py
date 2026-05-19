@@ -1,10 +1,30 @@
-import json
-import httpx
 from typing import Optional
+
+from pulpo.auth.general import MicroTokenManager, MicroHttpClient
+from pulpo.util.util import require_env
+
+CLIENT_ID = require_env("CLIENT_ID_CORREO")
+CLIENT_SECRET = require_env("CLIENT_SECRET_CORREO")
+
 
 class CorreoClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        self.headers = {
+            "Content-Type": "application/json"
+        }
+        self.tm = MicroTokenManager(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
+        self.client = MicroHttpClient(self.tm)
+
+    def _post(self, path: str, **kwargs):
+        return self.client.post(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
 
     def enviar_correo(
         self,
@@ -14,26 +34,17 @@ class CorreoClient:
         remitente: Optional[str] = None,
         adjuntos: Optional[list[tuple[str, str, str]]] = None
     ) -> dict:
-        url = f"{self.base_url}/email/send"
-
-        params = {
+        payload = {
             "destinatario": destinatario,
             "asunto": asunto or "Correo sin asunto",
-            "mensaje": mensaje
+            "mensaje": mensaje,
+            "remitente": remitente or ""
         }
 
-        params["remitente"] = remitente or ""
-
         if adjuntos:
-            params["adjuntos"] = [
+            payload["adjuntos"] = [
                 {"nombre": nombre, "contenido": contenido, "tipo": tipo}
                 for nombre, contenido, tipo in adjuntos
             ]
 
-        with httpx.Client() as client:
-            response = client.post(url, json=params) 
-            response.raise_for_status()
-            return response.json()
-
-
-    
+        return self._post("/email/send", json=payload)

@@ -1,8 +1,12 @@
-import requests
 from typing import Dict, Any, Optional
+
+from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
 URL_MEMORY = require_env("URL_MEMORY")
+CLIENT_ID = require_env("CLIENT_ID_MEMORY")
+CLIENT_SECRET = require_env("CLIENT_SECRET_MEMORY")
+
 
 class MemoryAPIClient:
     def __init__(
@@ -12,51 +16,89 @@ class MemoryAPIClient:
         overwrite: bool = False
     ):
         self.base_url = base_url.rstrip("/")
-        self.memory_id = memory_id  
+        self.memory_id = memory_id
+        self.headers = {
+            "Content-Type": "application/json"
+        }
+        self.tm = MicroTokenManager(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
+        self.client = MicroHttpClient(self.tm)
 
-        url = f"{self.base_url}/create"
-        resp = requests.post(url, json={"memory_id": memory_id, "overwrite": overwrite})
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post(
+            "/create",
+            json={
+                "memory_id": memory_id,
+                "overwrite": overwrite
+            }
+        )
         self.memory_id = data["memory_id"]
+
+    def _get(self, path: str, **kwargs):
+        return self.client.get(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
+
+    def _post(self, path: str, **kwargs):
+        return self.client.post(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
+
+    def _delete(self, path: str, **kwargs):
+        return self.client.delete(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
 
     def add(self, content: str, metadata: Optional[Dict] = None, memory_id: Optional[str] = None) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
-            raise ValueError("Se necesita un memory_id (llama primero a create_memory o pásalo explícitamente)")
-        url = f"{self.base_url}/add"
-        resp = requests.post(url, json={"memory_id": mid, "content": content, "metadata": metadata})
-        resp.raise_for_status()
-        return resp.json()
+            raise ValueError("Se necesita un memory_id (llama primero a create_memory o pasalo explicitamente)")
+        return self._post(
+            "/add",
+            json={
+                "memory_id": mid,
+                "content": content,
+                "metadata": metadata
+            }
+        )
 
     def similarity_search(self, query: str, k: int = 5, min_score: float = 0.7, memory_id: Optional[str] = None) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
             raise ValueError("Se necesita un memory_id")
-        url = f"{self.base_url}/search"
-        resp = requests.post(url, json={"memory_id": mid, "query": query, "k": k, "min_score": min_score})
-        resp.raise_for_status()
-        return resp.json()
+        return self._post(
+            "/search",
+            json={
+                "memory_id": mid,
+                "query": query,
+                "k": k,
+                "min_score": min_score
+            }
+        )
 
     def list_items(self, memory_id: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
-            raise ValueError("Se necesita un memory_id para listar ítems")
-        url = f"{self.base_url}/{mid}/list"
-        resp = requests.get(url, params={"limit": limit})
-        resp.raise_for_status()
-        return resp.json()
+            raise ValueError("Se necesita un memory_id para listar items")
+        return self._get(
+            f"/{mid}/list",
+            params={
+                "limit": limit
+            }
+        )
 
     def delete_memory(self, memory_id: Optional[str] = None) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
             raise ValueError("Se necesita un memory_id para borrar memoria")
-        url = f"{self.base_url}/{mid}"
-        resp = requests.delete(url)
-        resp.raise_for_status()
-        return resp.json()
+        return self._delete(f"/{mid}")
 
     def list_memories(self) -> Dict[str, Any]:
-        resp = requests.get(self.base_url)
-        resp.raise_for_status()
-        return resp.json()
+        return self._get("")
