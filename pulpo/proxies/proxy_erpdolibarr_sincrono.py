@@ -234,14 +234,28 @@ class ERPProxySincrono:
     # Invoices
     # ============================================================
 
-    def facturas_venta(self):
+    def facturas_venta(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
-            "/invoices/sales"
+            "/invoices/sales",
+            params={
+                "limit": limit,
+                "page": page,
+                "from_date": from_date,
+                "to_date": to_date,
+                "include_raw": include_raw
+            }
         )
 
-    def facturas_compra(self):
+    def facturas_compra(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
-            "/invoices/purchase"
+            "/invoices/purchase",
+            params={
+                "limit": limit,
+                "page": page,
+                "from_date": from_date,
+                "to_date": to_date,
+                "include_raw": include_raw
+            }
         )
 
     def facturas_periodo(
