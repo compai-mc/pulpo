@@ -7,11 +7,13 @@ from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 
 CLIENT_ID = require_env("CLIENT_ID_ERPDOLIBARR")
 CLIENT_SECRET = require_env("CLIENT_SECRET_ERPDOLIBARR")
+URL_DOLIBARR = require_env("URL_DOLIBARR")
+API_KEY_DOLIBARR = require_env("API_KEY_DOLIBARR")
 
 
 class ERPProxySincrono:
 
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str = URL_DOLIBARR, api_key: Optional[str] = API_KEY_DOLIBARR):
 
         self.base_url = base_url.rstrip("/")
 
