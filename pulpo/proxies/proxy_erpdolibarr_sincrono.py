@@ -3,16 +3,19 @@ import urllib.parse
 
 from pulpo.util.util import require_env
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
-from pulpo.auth.general import set_service_token
 
 CLIENT_ID = require_env("CLIENT_ID_ERPDOLIBARR")
 CLIENT_SECRET = require_env("CLIENT_SECRET_ERPDOLIBARR")
-URL_DOLIBARR = require_env("URL_DOLIBARR")
+
+## URL de la API del micro wrapper de Dolibarr, que a su vez se conecta con el ERP de Dolibarr
+ERPDOLIBARR_URL = require_env("ERPDOLIBARR_URL")
+
+## API Key para autenticación con DOLIBARR
 API_KEY_DOLIBARR = require_env("API_KEY_DOLIBARR")
 
 class ERPProxySincrono:
 
-    def __init__(self, base_url: str = URL_DOLIBARR, api_key: Optional[str] = API_KEY_DOLIBARR):
+    def __init__(self, base_url: str = ERPDOLIBARR_URL, api_key: Optional[str] = API_KEY_DOLIBARR):
 
         self.base_url = base_url.rstrip("/")
 
