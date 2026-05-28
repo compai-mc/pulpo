@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List
+import os
 import urllib.parse
 
 from pulpo.util.util import require_env
@@ -13,11 +14,37 @@ ERPDOLIBARR_URL = require_env("ERPDOLIBARR_URL")
 ## API Key para autenticación con DOLIBARR
 API_KEY_DOLIBARR = require_env("API_KEY_DOLIBARR")
 
+
+def _float_env(var_name: str, default: float) -> float:
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+ERPDOLIBARR_TIMEOUT = _float_env("ERPDOLIBARR_TIMEOUT", 120.0)
+ERPDOLIBARR_SLOW_TIMEOUT = _float_env("ERPDOLIBARR_SLOW_TIMEOUT", 300.0)
+ERPDOLIBARR_CLIENTS_TIMEOUT = _float_env(
+    "ERPDOLIBARR_CLIENTS_TIMEOUT",
+    ERPDOLIBARR_SLOW_TIMEOUT
+)
+
 class ERPProxySincrono:
 
-    def __init__(self, base_url: str = ERPDOLIBARR_URL, api_key: Optional[str] = API_KEY_DOLIBARR):
+    def __init__(
+        self,
+        base_url: str = ERPDOLIBARR_URL,
+        api_key: Optional[str] = API_KEY_DOLIBARR,
+        timeout: float = ERPDOLIBARR_TIMEOUT,
+        slow_timeout: float = ERPDOLIBARR_SLOW_TIMEOUT
+    ):
 
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.slow_timeout = slow_timeout
 
         self.headers = {
             "Content-Type": "application/json"
@@ -38,6 +65,7 @@ class ERPProxySincrono:
     # ============================================================
 
     def _get(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.get(
             f"{self.base_url}{path}",
             headers=self.headers,
@@ -45,6 +73,7 @@ class ERPProxySincrono:
         )
 
     def _post(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.post(
             f"{self.base_url}{path}",
             headers=self.headers,
@@ -52,6 +81,7 @@ class ERPProxySincrono:
         )
     
     def _put(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.put(
             f"{self.base_url}{path}",
             headers=self.headers,
@@ -59,6 +89,7 @@ class ERPProxySincrono:
         )
 
     def _patch(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.patch(
             f"{self.base_url}{path}",
             headers=self.headers,
@@ -135,7 +166,10 @@ class ERPProxySincrono:
         )
 
     def pedidos_sync(self):
-        return self._post("/orders/sync")
+        return self._post(
+            "/orders/sync",
+            timeout=self.slow_timeout
+        )
 
     # ============================================================
     # Products
@@ -182,7 +216,8 @@ class ERPProxySincrono:
         product_id: int
     ):
         return self._get(
-            f"/products/{product_id}/orders/customers"
+            f"/products/{product_id}/orders/customers",
+            timeout=self.slow_timeout
         )
 
     def producto_compras(
@@ -198,10 +233,16 @@ class ERPProxySincrono:
     # ============================================================
 
     def clientes(self):
-        return self._get("/clients")
+        return self._get(
+            "/clients",
+            timeout=ERPDOLIBARR_CLIENTS_TIMEOUT
+        )
 
     def clientes_con_contactos(self):
-        return self._get("/clients/with-contacts")
+        return self._get(
+            "/clients/with-contacts",
+            timeout=ERPDOLIBARR_CLIENTS_TIMEOUT
+        )
 
     def cliente(
         self,
