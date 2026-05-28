@@ -8,7 +8,6 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import hvac
-import requests
 from datetime import datetime
 from importlib.metadata import distributions
 from typing import Union, List
@@ -38,22 +37,6 @@ def load_env(
         config_especifico_id: str = ""
     ):
     """Carga variables desde Vault → .env → config-service"""
-
-    # Permite que los micros usen el compose como fuente de bootstrap.
-    # Estas variables deben cargarse antes de importar pulpo.auth.
-    vault_addr = os.getenv("VAULT_URL", vault_addr)
-    vault_token = os.getenv("VAULT_TOKEN", vault_token)
-    config_especifico_id = config_especifico_id or os.getenv("CONFIG_ID", "")
-
-    env_vault_path = os.getenv("VAULT_PATH")
-    env_vault_clients = os.getenv("VAULT_CLIENTS")
-
-    if env_vault_path and env_vault_clients:
-        vault_path = [env_vault_path, env_vault_clients]
-    elif env_vault_path:
-        vault_path = env_vault_path
-    elif env_vault_clients:
-        vault_path = env_vault_clients
 
     def load_all_secrets(client, base_path):
         """
@@ -120,56 +103,19 @@ def load_env(
             override=True
         )
 
-    def get_config_raw(service: str) -> dict:
-        """
-        Lee config-service sin importar clientes autenticados de Pulpo.
-        Se usa en bootstrap, antes de que existan SEC_KEYCLOAK_URL/SEC_REALM.
-        """
-        config_service_url = os.getenv("URL_CONFIG_SERVICE")
-
-        if not config_service_url:
-            raise RuntimeError(
-                "Variable de entorno obligatoria no definida: URL_CONFIG_SERVICE"
-            )
-
-        url = f"{config_service_url.rstrip('/')}/config/{service}"
-        response = requests.get(url, timeout=10)
-
-        if response.status_code == 404:
-            log.warning(
-                f"No se encontro configuracion para el servicio '{service}'"
-            )
-            return {}
-
-        response.raise_for_status()
-        return response.json() or {}
-
-    def extract_config(payload: dict) -> dict:
-        """
-        Normaliza respuestas del config-service:
-        {"config": {...}} o directamente {...}.
-        """
-        if not isinstance(payload, dict):
-            return {}
-
-        config = payload.get("config", payload)
-        return config if isinstance(config, dict) else {}
-
     # --- 3. Config-service ---
     # Inicializar variables para evitar UnboundLocalError
     config_global = {}
     config_especifico = {}
-
+    
     try:
-        config_global = extract_config(
-            get_config_raw("compai_global")
-        )
+        from pulpo.proxies.proxy_config_service import ConfigClient
+        config_global = ConfigClient().get_config("compai_global").get("config", {})
         config_global_static = config_global.get("static", {})
 
         if config_especifico_id:
-            config_especifico = extract_config(
-                get_config_raw(config_especifico_id)
-            )
+            resultado = ConfigClient().get_config(config_especifico_id) or {}
+            config_especifico = resultado.get("config", {}) if isinstance(resultado, dict) else {}
         else:
             config_especifico = {}
 
