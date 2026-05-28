@@ -1,8 +1,13 @@
 
 
 /venv_pulpo
+/.venv312/
 /__pycache__/
 pulpo/gestor_tareas/__pycache__/gestor_tareas.cpython-312.pyc
 pulpo/gestor_tareas/__pycache__/gestor_tareas.cpython-312.pyc
 pulpo/compai_tools/__pycache__/
 log/
+pulpo/proxies/__pycache__/
+pulpo/auth/__pycache__/
+pulpo/util/__pycache__/
+pulpo/__pycache__

@@ -167,13 +167,14 @@ class MicroHttpClient:
             headers["X-User-Token"] = user_token
 
 
-        resp = httpx.request(method, url, headers=headers, timeout=30, **kwargs)
+        timeout = kwargs.pop("timeout", 30)
+        resp = httpx.request(method, url, headers=headers, timeout=timeout, **kwargs)
 
         # Si el token caducó → refrescamos y reintentamos
         if resp.status_code == 401:
             self.tm.cached = None
             headers["Authorization"] = f"Bearer {self.tm.refresh()}"
-            resp = httpx.request(method, url, headers=headers, timeout=30, **kwargs)
+            resp = httpx.request(method, url, headers=headers, timeout=timeout, **kwargs)
 
         resp.raise_for_status()
         return resp
@@ -189,6 +190,9 @@ class MicroHttpClient:
 
     def put(self, url, json=None, **kwargs):
         return self._request("PUT", url, json=json, **kwargs).json()
+
+    def patch(self, url, json=None, **kwargs):
+        return self._request("PATCH", url, json=json, **kwargs).json()
 
     def delete(self, url, **kwargs):
         r = self._request("DELETE", url, **kwargs)

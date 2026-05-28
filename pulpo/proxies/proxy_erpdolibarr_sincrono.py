@@ -72,6 +72,23 @@ class ERPProxySincrono:
     def shipments(self):
         return self._get("/shipments")
 
+    def crear_shipment(
+        self,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            "/shipments",
+            json=payload
+        )
+
+    def shipment_por_pedido(
+        self,
+        origin_id: int
+    ):
+        return self._get(
+            f"/shipments/by-order/{origin_id}"
+        )
+
     def shipment_parametro(
         self,
         shipment_id: int,
@@ -90,6 +107,16 @@ class ERPProxySincrono:
         return self._patch(
             f"/shipments/{shipment_id}/parametro/{parametro}",
             json={"value": valor}
+        )
+
+    def validar_shipment(
+        self,
+        shipment_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/shipments/{shipment_id}/validate",
+            json=payload or {}
         )
 
     # ============================================================
@@ -119,6 +146,17 @@ class ERPProxySincrono:
 
     def producto(self, product_id: int):
         return self._get(f"/products/{product_id}")
+
+    def producto_por_ref(self, ref: str):
+
+        ref_encoded = urllib.parse.quote(
+            ref,
+            safe=""
+        )
+
+        return self._get(
+            f"/products/ref/{ref_encoded}"
+        )
 
     def producto_stock(self, product_ref: str):
 
@@ -161,6 +199,35 @@ class ERPProxySincrono:
 
     def clientes(self):
         return self._get("/clients")
+
+    def clientes_con_contactos(self):
+        return self._get("/clients/with-contacts")
+
+    def cliente(
+        self,
+        client_id: int
+    ):
+        return self._get(
+            f"/clients/{client_id}"
+        )
+
+    def contactos_cliente(
+        self,
+        client_id: int
+    ):
+        return self._get(
+            f"/clients/{client_id}/contacts"
+        )
+
+    def crear_contacto_cliente(
+        self,
+        client_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            f"/clients/{client_id}/contacts",
+            json=payload
+        )
 
     def cliente_por_telefono(
         self,
@@ -216,6 +283,31 @@ class ERPProxySincrono:
     def gastos_bancarios(self):
         return self._get(
             "/banks/expenses"
+        )
+
+    def gastos_comisiones_bancarias(self):
+        return self._get(
+            "/banks/expenses/bank-fees"
+        )
+
+    def gastos_intereses_financieros(self):
+        return self._get(
+            "/banks/expenses/financial-interest"
+        )
+
+    def gastos_seguros(self):
+        return self._get(
+            "/banks/expenses/insurance"
+        )
+
+    def cancelaciones_financieras(self):
+        return self._get(
+            "/banks/financial-cancellations"
+        )
+
+    def transferencias_bancarias(self):
+        return self._get(
+            "/banks/transfers"
         )
 
     def cuenta_bancaria(
@@ -274,6 +366,27 @@ class ERPProxySincrono:
                 "end": end
             }
         )
+
+    def pagos_facturas_bancos(self):
+        return self._get(
+            "/invoices/payments/banks"
+        )
+
+    def pagos_factura(
+        self,
+        invoice_id: int
+    ):
+        return self._get(
+            f"/invoices/{invoice_id}/payments"
+        )
+
+    def pagos_factura_bancos(
+        self,
+        invoice_id: int
+    ):
+        return self._get(
+            f"/invoices/{invoice_id}/payments/banks"
+        )
     
     def actualizar_conciliacion_factura(
         self,
@@ -310,6 +423,60 @@ class ERPProxySincrono:
     ):
         return self._post(
             "/proposal",
+            json=payload
+        )
+
+    def propuesta(
+        self,
+        proposal_id: int
+    ):
+        return self._get(
+            f"/proposal/{proposal_id}"
+        )
+
+    def crear_documento_propuesta(
+        self,
+        name: str,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/proposal/{name}/create/document",
+            json=payload or {}
+        )
+
+    def descargar_documento_propuesta(
+        self,
+        name: str
+    ):
+        return self._get(
+            f"/proposal/{name}/document/download"
+        )
+
+    def actualizar_extrafields_propuesta(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._patch(
+            f"/proposal/{proposal_id}/extrafields",
+            json=payload
+        )
+
+    def lineas_propuesta(
+        self,
+        proposal_id: int
+    ):
+        return self._get(
+            f"/proposal/{proposal_id}/lines"
+        )
+
+    def crear_linea_propuesta(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            f"/proposal/{proposal_id}/lines",
             json=payload
         )
 
