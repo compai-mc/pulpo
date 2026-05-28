@@ -5,8 +5,16 @@ from pulpo.util.esquema import CompaiMessage
 from pulpo.util.util import require_env
 
 BASE_URL_ORQUESTATOR = require_env("BASE_URL_ORQUESTATOR")
-CLIENT_ID = require_env("CLIENT_ID_ORQUESTATOR")
-CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATOR")
+
+try:
+    CLIENT_ID = require_env("CLIENT_ID_ORQUESTATOR")
+except RuntimeError:
+    CLIENT_ID = require_env("CLIENT_ID_ORQUESTATORFLOW")
+
+try:
+    CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATOR")
+except RuntimeError:
+    CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATORFLOW")
 
 
 class OrchestratorError(Exception):

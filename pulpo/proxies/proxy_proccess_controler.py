@@ -4,8 +4,16 @@ from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
 PROCCESSCONTROLER_URL = require_env("PROCCESSCONTROLER_URL")
-CLIENT_ID = require_env("CLIENT_ID_PROCCESSCONTROLER")
-CLIENT_SECRET = require_env("CLIENT_SECRET_PROCCESSCONTROLER")
+
+try:
+    CLIENT_ID = require_env("CLIENT_ID_PROCCESSCONTROLER")
+except RuntimeError:
+    CLIENT_ID = require_env("CLIENT_ID_PROCESSCONTROLLER")
+
+try:
+    CLIENT_SECRET = require_env("CLIENT_SECRET_PROCCESSCONTROLER")
+except RuntimeError:
+    CLIENT_SECRET = require_env("CLIENT_SECRET_PROCESSCONTROLLER")
 
 
 # Cliente proxy para microservicio de similitud de datos en milvus (7417)
