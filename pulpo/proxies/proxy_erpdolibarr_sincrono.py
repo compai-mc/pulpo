@@ -4,14 +4,18 @@ import urllib.parse
 from pulpo.util.util import require_env
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 
-
 CLIENT_ID = require_env("CLIENT_ID_ERPDOLIBARR")
 CLIENT_SECRET = require_env("CLIENT_SECRET_ERPDOLIBARR")
 
+## URL de la API del micro wrapper de Dolibarr, que a su vez se conecta con el ERP de Dolibarr
+ERPDOLIBARR_URL = require_env("ERPDOLIBARR_URL")
+
+## API Key para autenticación con DOLIBARR
+API_KEY_DOLIBARR = require_env("API_KEY_DOLIBARR")
 
 class ERPProxySincrono:
 
-    def __init__(self, base_url: str, api_key: Optional[str] = None):
+    def __init__(self, base_url: str = ERPDOLIBARR_URL, api_key: Optional[str] = API_KEY_DOLIBARR):
 
         self.base_url = base_url.rstrip("/")
 
@@ -326,30 +330,28 @@ class ERPProxySincrono:
     # Invoices
     # ============================================================
 
-    def facturas(self, period: Optional[str] = None):
-        params = {}
-
-        if period:
-            params["period"] = period
-
+    def facturas_venta(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
-            "/invoices",
-            params=params or None
+            "/invoices/sales",
+            params={
+                "limit": limit,
+                "page": page,
+                "from_date": from_date,
+                "to_date": to_date,
+                "include_raw": include_raw
+            }
         )
 
-    def facturas_periodo_actual(self):
-        return self.facturas(
-            period="current_year"
-        )
-
-    def facturas_venta(self):
+    def facturas_compra(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
-            "/invoices/sales"
-        )
-
-    def facturas_compra(self):
-        return self._get(
-            "/invoices/purchase"
+            "/invoices/purchase",
+            params={
+                "limit": limit,
+                "page": page,
+                "from_date": from_date,
+                "to_date": to_date,
+                "include_raw": include_raw
+            }
         )
 
     def facturas_periodo(
