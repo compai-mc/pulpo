@@ -4,17 +4,9 @@ from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.esquema import CompaiMessage
 from pulpo.util.util import require_env
 
-BASE_URL_ORQUESTATOR = require_env("BASE_URL_ORQUESTATOR")
-
-try:
-    CLIENT_ID = require_env("CLIENT_ID_ORQUESTATOR")
-except RuntimeError:
-    CLIENT_ID = require_env("CLIENT_ID_ORQUESTATORFLOW")
-
-try:
-    CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATOR")
-except RuntimeError:
-    CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATORFLOW")
+ORQUESTATORFLOW_URL = require_env("ORQUESTATORFLOW_URL")
+CLIENT_ID = require_env("CLIENT_ID_ORQUESTATORFLOW")
+CLIENT_SECRET = require_env("CLIENT_SECRET_ORQUESTATORFLOW")
 
 
 class OrchestratorError(Exception):
@@ -23,7 +15,7 @@ class OrchestratorError(Exception):
 
 
 class OrchestratorProxy:
-    def __init__(self, base_url: str = BASE_URL_ORQUESTATOR):
+    def __init__(self, base_url: str = ORQUESTATORFLOW_URL):
         self.base_url = base_url.rstrip("/")
         self.headers = {
             "Content-Type": "application/json"
@@ -66,12 +58,12 @@ def _post_json(url: str, payload: Dict[str, Any], timeout: int = 20) -> Dict[str
     """
     Internal helper kept for compatibility with callers that import it directly.
     """
-    if not url.startswith(BASE_URL_ORQUESTATOR):
+    if not url.startswith(ORQUESTATORFLOW_URL):
         raise OrchestratorError(
-            "_post_json only supports BASE_URL_ORQUESTATOR after secure proxy migration"
+            "_post_json only supports ORQUESTATORFLOW_URL after secure proxy migration"
         )
 
-    path = url[len(BASE_URL_ORQUESTATOR.rstrip("/")):]
+    path = url[len(ORQUESTATORFLOW_URL.rstrip("/")):]
     return _proxy()._post(path, payload, timeout=timeout)
 
 

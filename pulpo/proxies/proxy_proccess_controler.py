@@ -3,22 +3,14 @@ from typing import Dict, Optional
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
-PROCCESSCONTROLER_URL = require_env("PROCCESSCONTROLER_URL")
-
-try:
-    CLIENT_ID = require_env("CLIENT_ID_PROCCESSCONTROLER")
-except RuntimeError:
-    CLIENT_ID = require_env("CLIENT_ID_PROCESSCONTROLLER")
-
-try:
-    CLIENT_SECRET = require_env("CLIENT_SECRET_PROCCESSCONTROLER")
-except RuntimeError:
-    CLIENT_SECRET = require_env("CLIENT_SECRET_PROCESSCONTROLLER")
+PROCESSCONTROLLER_URL = require_env("PROCESSCONTROLLER_URL")
+CLIENT_ID = require_env("CLIENT_ID_PROCESSCONTROLLER")
+CLIENT_SECRET = require_env("CLIENT_SECRET_PROCESSCONTROLLER")
 
 
 # Cliente proxy para microservicio de similitud de datos en milvus (7417)
 class ProccessControlerProxy:
-    def __init__(self, base_url: str = PROCCESSCONTROLER_URL, api_key: Optional[str] = None):
+    def __init__(self, base_url: str = PROCESSCONTROLLER_URL, api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.headers = {
             "Content-Type": "application/json"
