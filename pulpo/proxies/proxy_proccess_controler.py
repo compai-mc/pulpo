@@ -31,6 +31,13 @@ class ProccessControlerProxy:
             **kwargs
         )
 
+    def _post(self, path: str, **kwargs):
+        return self.client.post(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
+
     def similarity_product(self, query: str, codigo: str, numero_resultados: int = 15, min_score: int = 0) -> Dict:
         return self._get(
             "/product/similarity",
@@ -59,4 +66,46 @@ class ProccessControlerProxy:
                 "referencia_producto": product_id,
                 "referencia_cliente": client_id
             }
+        )
+
+    def validar_precios(self, payload: Dict) -> Dict:
+        return self._post(
+            "/price/validate",
+            json=payload
+        )
+
+    def buscar_contacto_por_email(
+        self,
+        thirdparty_id: str,
+        email: str,
+        numero_resultados: int = 1
+    ) -> Dict:
+        return self._get(
+            "/contact/search/email",
+            params={
+                "thirdparty_id": thirdparty_id,
+                "email": email,
+                "numero_resultados": numero_resultados
+            }
+        )
+
+    def buscar_contacto(
+        self,
+        query: str,
+        thirdparty_id: Optional[str] = None,
+        numero_resultados: int = 5,
+        min_score: int = 0
+    ) -> Dict:
+        params = {
+            "query": query,
+            "numero_resultados": numero_resultados,
+            "min_score": min_score
+        }
+
+        if thirdparty_id is not None:
+            params["thirdparty_id"] = thirdparty_id
+
+        return self._get(
+            "/contact/search",
+            params=params
         )

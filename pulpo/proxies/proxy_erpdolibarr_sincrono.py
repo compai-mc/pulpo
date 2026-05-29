@@ -625,6 +625,16 @@ class ERPProxySincrono:
             json=payload
         )
 
+    def add_proposal_contact(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self.contactos_propuesta(
+            proposal_id,
+            payload
+        )
+
     # ============================================================
     # Admin
     # ============================================================
