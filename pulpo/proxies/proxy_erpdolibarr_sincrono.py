@@ -171,6 +171,34 @@ class ERPProxySincrono:
             timeout=self.slow_timeout
         )
 
+    def pedido_por_ref(self, order_ref: str):
+        ref_encoded = urllib.parse.quote(
+            order_ref,
+            safe=""
+        )
+
+        return self._get(
+            f"/orders/by-ref/{ref_encoded}"
+        )
+
+    def pedido(
+        self,
+        order_id: int
+    ):
+        return self._get(
+            f"/orders/{order_id}"
+        )
+
+    def crear_factura_pedido(
+        self,
+        order_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/orders/{order_id}/invoice",
+            json=payload or {}
+        )
+
     # ============================================================
     # Products
     # ============================================================
@@ -228,6 +256,34 @@ class ERPProxySincrono:
             f"/products/{product_id}/orders/suppliers"
         )
 
+    def actualizar_barcode_producto(
+        self,
+        product_id: int,
+        barcode: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        body = payload if payload is not None else {"barcode": barcode}
+        return self._patch(
+            f"/products/{product_id}/barcode",
+            json=body
+        )
+
+    # ============================================================
+    # Projects
+    # ============================================================
+
+    def proyectos(self):
+        return self._get("/projects")
+
+    def buscar_proyectos(
+        self,
+        **params
+    ):
+        return self._get(
+            "/projects/search",
+            params=params or None
+        )
+
     # ============================================================
     # Clients
     # ============================================================
@@ -242,6 +298,15 @@ class ERPProxySincrono:
         return self._get(
             "/clients/with-contacts",
             timeout=ERPDOLIBARR_CLIENTS_TIMEOUT
+        )
+
+    def crear_cliente(
+        self,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            "/clients",
+            json=payload
         )
 
     def cliente(
@@ -370,6 +435,15 @@ class ERPProxySincrono:
     # ============================================================
     # Invoices
     # ============================================================
+
+    def facturas(
+        self,
+        **params
+    ):
+        return self._get(
+            "/invoices",
+            params=params or None
+        )
 
     def facturas_venta(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
@@ -539,6 +613,16 @@ class ERPProxySincrono:
             params={
                 "validate_order": validate_order
             }
+        )
+
+    def contactos_propuesta(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            f"/proposal/{proposal_id}/contacts",
+            json=payload
         )
 
     # ============================================================
