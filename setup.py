@@ -2,11 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-<<<<<<< Updated upstream
-    version="5.7.1",
-=======
     version="5.7.9",
->>>>>>> Stashed changes
+main
     packages=find_packages(),
     install_requires=[
         "requests",
@@ -14,6 +11,7 @@ setup(
         "kafka-python",
         "langroid",
         "hvac",
+        "httpx",
         "json5",
         "PyJWT"
     ],

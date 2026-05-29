@@ -43,6 +43,17 @@ class OrchestratorProxy:
                 ) from e
             raise OrchestratorError(f"Network error calling orchestrator: {e}") from e
 
+    def webhook_task_update(
+        self,
+        payload: Dict[str, Any],
+        timeout: int = 20
+    ) -> Dict[str, Any]:
+        return self._post(
+            "/webhook/task_update/",
+            payload,
+            timeout=timeout
+        )
+
 
 _default_proxy: OrchestratorProxy | None = None
 
@@ -113,6 +124,19 @@ def publish_complete_job(mensaje: CompaiMessage, timeout: int = 20) -> Dict[str,
     """
     payload = mensaje.model_dump(mode="json", exclude_none=True)
     return _proxy()._post("/job/publish/complete", payload, timeout=timeout)
+
+
+def webhook_task_update(
+    payload: Dict[str, Any],
+    timeout: int = 20
+) -> Dict[str, Any]:
+    """
+    Calls orchestrator endpoint /webhook/task_update/.
+    """
+    return _proxy().webhook_task_update(
+        payload,
+        timeout=timeout
+    )
 
 
 if __name__ == "__main__":
