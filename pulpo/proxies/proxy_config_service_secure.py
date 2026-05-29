@@ -39,21 +39,6 @@ class SecureConfigClient:
             **kwargs
         )
 
-    def _put(self, path: str, payload: Optional[Dict[str, Any]] = None, **kwargs):
-        return self.client.put(
-            f"{self.base_url}{path}",
-            json=payload or {},
-            headers=self.headers,
-            **kwargs
-        )
-
-    def _delete(self, path: str, **kwargs):
-        return self.client.delete(
-            f"{self.base_url}{path}",
-            headers=self.headers,
-            **kwargs
-        )
-
     def health(self) -> Dict[str, Any]:
         return self._get("/health")
 
@@ -100,9 +85,6 @@ class SecureConfigClient:
         merge: bool = True
     ) -> Dict[str, Any]:
         return self.upsert_config(service, data, env=env, merge=merge)
-
-    def delete_config(self, service: str):
-        return self._delete(f"/config/{service}")
 
 
 ConfigServiceProxy = SecureConfigClient
