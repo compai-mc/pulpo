@@ -29,33 +29,28 @@ def require_env(var_name: str) -> str:
     return value
 
 
-def load_env(
-        vault_addr:str = "http://alcazar:8200",
-        vault_token:str = "root",
-        vault_path: Union[str, List[str]] = "des/compai",
-        env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env",
-        config_especifico_id: str = ""
-    ):
-    """Carga variables desde Vault → .env → config-service"""
+def load_vault(
+        vault_addr: str = "http://alcazar:8200",
+        vault_token: str = "root",
+        vault_path: Union[str, List[str]] = "des/compai"
+    ) -> bool:
+    """Carga variables solo desde Vault, sin .env local y sin config-service."""
 
     def load_all_secrets(client, base_path):
         """
         Carga todas las claves del path base y de todos los subdirectorios recursivamente.
         Compatible con Vault KV v2.
         """
-        # 1️⃣ Intentar leer secretos DIRECTAMENTE del base_path
         try:
             secret = client.secrets.kv.v2.read_secret_version(path=base_path)
             secret_data = secret["data"]["data"]
             if secret_data:
                 os.environ.update(secret_data)
         except hvac.exceptions.InvalidPath:
-            # Es válido que el root no tenga datos
             pass
         except Exception as e:
-            log.error(f"⚠️ Error leyendo secretos en {base_path}: {e}")
+            log.error(f"Error leyendo secretos en {base_path}: {e}")
 
-        # 2️⃣ Listar subpaths (si existen)
         try:
             response = client.secrets.kv.v2.list_secrets(path=base_path)
             keys = response["data"]["keys"]
@@ -66,48 +61,61 @@ def load_env(
                     load_all_secrets(client, full_path)
 
         except hvac.exceptions.InvalidPath:
-            # Es válido que no existan subdirectorios
             pass
         except Exception as e:
-            log.error(f"⚠️ Error listando secretos en {base_path}: {e}")
+            log.error(f"Error listando secretos en {base_path}: {e}")
+
+    if not vault_addr or not vault_token:
+        return False
+
+    try:
+        client = hvac.Client(url=vault_addr, token=vault_token)
+        if client.is_authenticated():
+            log.info("Vault conectado correctamente")
+
+            paths = (
+                vault_path
+                if isinstance(vault_path, (list, tuple))
+                else [vault_path]
+            )
+
+            for path in paths:
+                load_all_secrets(client, path)
+
+            return True
+
+        log.warning("Token invalido, usando .env local")
+    except Exception as e:
+        log.error(f"Error accediendo a Vault: {e}")
+
+    return False
 
 
-    # --- 1. Vault ---
-    vault_loaded = False
-    if vault_addr and vault_token:
-        try:
-            client = hvac.Client(url=vault_addr, token=vault_token)
-            if client.is_authenticated():
-                log.info("✅ Vault conectado correctamente")
+def load_env(
+        vault_addr:str = "http://alcazar:8200",
+        vault_token:str = "root",
+        vault_path: Union[str, List[str]] = "des/compai",
+        env_path: str = "../../compai/deploy/desarrollo/desarrollo-compai/.env",
+        config_especifico_id: str = ""
+    ):
+    """Carga variables desde Vault, .env y config-service."""
 
-                paths = (
-                    vault_path
-                    if isinstance(vault_path, (list, tuple))
-                    else [vault_path]
-                )
+    vault_loaded = load_vault(
+        vault_addr=vault_addr,
+        vault_token=vault_token,
+        vault_path=vault_path,
+    )
 
-                for path in paths:
-                    load_all_secrets(client, path)
-
-                vault_loaded = True
-            else:
-                log.warning("⚠️ Token inválido, usando .env local")
-        except Exception as e:
-            log.error(f"⚠️ Error accediendo a Vault: {e}")
-
-    # --- 2. .env local si Vault no funcionó ---
     if not vault_loaded:
-        log.info("💡 Usando variables locales del .env")
+        log.info("Usando variables locales del .env")
         load_dotenv(
             dotenv_path=Path(env_path),
             override=True
         )
 
-    # --- 3. Config-service ---
-    # Inicializar variables para evitar UnboundLocalError
     config_global = {}
     config_especifico = {}
-    
+
     try:
         from pulpo.proxies.proxy_config_service import ConfigClient
         config_global = ConfigClient().get_config("compai_global").get("config", {})
@@ -119,28 +127,25 @@ def load_env(
         else:
             config_especifico = {}
 
-        # Añadir al entorno
         for key, value in config_global_static.items():
             os.environ[str(key)] = str(value)
 
         for key, value in config_especifico.items():
             str_key = str(key)
-            
-            # Verificamos si la clave ya existe en el entorno antes de escribir
+
             if str_key in os.environ:
                 log.warning(
-                    f"Configuración específica sobrescribiendo variable existente: "
+                    f"Configuracion especifica sobrescribiendo variable existente: "
                     f"Key='{str_key}' | Valor anterior='{os.environ[str_key]}' | Nuevo valor='{value}'"
                 )
             os.environ[str_key] = str(value)
 
-        log.info("🔧 Config-service cargado correctamente")
+        log.info("Config-service cargado correctamente")
 
     except Exception as e:
-        log.error(f"⚠️ No se pudo cargar config-service: {e}")
+        log.error(f"No se pudo cargar config-service: {e}")
 
     return { "global": config_global, "especifico": config_especifico }
-
 
 def extraer_json_del_texto(texto) -> dict:
     """
