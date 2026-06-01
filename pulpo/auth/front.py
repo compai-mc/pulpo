@@ -45,6 +45,14 @@ _front_tokens = {
     "refresh_exp": 0,
 }
 
+
+def _token_hint(token: str | None) -> str:
+    if not token:
+        return "<empty>"
+    token = str(token)
+    return f"{token[:12]}...{token[-8:]} len={len(token)}"
+
+
 # ===========================
 # 👤 LOGIN FRONT
 # ===========================
@@ -55,6 +63,10 @@ def front_login(
 ):
 
     global _front_tokens
+    log.info(
+        "[auth-front] front_login inicio "
+        f"client_id={CLIENT_ID_FRONT} username={username} has_otp={bool(otp_code)}"
+    )
 
     auth = Auth(
         base_url=KEYCLOAK_URL,
@@ -67,6 +79,13 @@ def front_login(
         username,
         password,
         otp_code,
+    )
+    log.info(
+        "[auth-front] front_login ok "
+        f"client_id={CLIENT_ID_FRONT} username={username} "
+        f"access_token={_token_hint(result.get('access_token'))} "
+        f"expires_in={result.get('expires_in')} "
+        f"refresh_expires_in={result.get('refresh_expires_in')}"
     )
 
     _front_tokens["access_token"] = (
@@ -102,6 +121,10 @@ def front_login(
 def front_refresh_tokens():
 
     global _front_tokens
+    log.info(
+        "[auth-front] front_refresh_tokens inicio "
+        f"client_id={CLIENT_ID_FRONT} has_refresh={bool(_front_tokens['refresh_token'])}"
+    )
 
     if not _front_tokens["refresh_token"]:
 
@@ -128,6 +151,13 @@ def front_refresh_tokens():
     )
 
     result = auth.refresh_access_token()
+    log.info(
+        "[auth-front] front_refresh_tokens ok "
+        f"client_id={CLIENT_ID_FRONT} "
+        f"access_token={_token_hint(result.get('access_token'))} "
+        f"expires_in={result.get('expires_in')} "
+        f"refresh_expires_in={result.get('refresh_expires_in')}"
+    )
 
     _front_tokens["access_token"] = (
         result["access_token"]
@@ -157,6 +187,13 @@ def get_valid_access_token(margin_seconds=30):
     global _front_tokens
 
     now = time.time()
+    log.debug(
+        "[auth-front] get_valid_access_token inicio "
+        f"has_access={bool(_front_tokens['access_token'])} "
+        f"access_exp={_front_tokens['access_exp']} "
+        f"refresh_exp={_front_tokens['refresh_exp']} "
+        f"margin_seconds={margin_seconds}"
+    )
 
     # ❌ No tiene nada → debe hacer login
     if not _front_tokens["access_token"]:
@@ -173,9 +210,11 @@ def get_valid_access_token(margin_seconds=30):
     # ✔ Si el access va a caducar → intentamos refresh
     if now > (_front_tokens["access_exp"] - margin_seconds):
 
+        log.info("[auth-front] access token cerca de caducar; refrescando")
         nuevo_token = front_refresh_tokens()["access_token"]
         set_user_token(nuevo_token)
         return nuevo_token
 
     set_user_token(access_token)
+    log.debug(f"[auth-front] access token reutilizado token={_token_hint(access_token)}")
     return access_token

@@ -40,7 +40,16 @@ class ProccessControlerProxy:
 
     @staticmethod
     def _params(**params):
-        return {key: value for key, value in params.items() if value is not None}
+        clean_params = {}
+        for key, value in params.items():
+            if value is None:
+                continue
+            if isinstance(value, str):
+                value = value.strip()
+                if key.startswith("min_score") and value.endswith("'"):
+                    value = value.rstrip("'")
+            clean_params[key] = value
+        return clean_params
 
     def similarity_product(
         self,
