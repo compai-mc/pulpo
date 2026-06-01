@@ -1,15 +1,9 @@
-import os
 from typing import Dict, Optional
 
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
-PROCCESSCONTROLER_URL = (
-    os.getenv("PROCCESSCONTROLER_URL")
-    or os.getenv("PROCESSCONTROLLER_URL")
-    or require_env("PROCCESSCONTROLER_URL")
-)
-PROCESSCONTROLLER_URL = PROCCESSCONTROLER_URL
+PROCCESSCONTROLER_URL = require_env("PROCCESSCONTROLER_URL")
 CLIENT_ID = require_env("CLIENT_ID_PROCESSCONTROLLER")
 CLIENT_SECRET = require_env("CLIENT_SECRET_PROCESSCONTROLLER")
 
@@ -44,74 +38,103 @@ class ProccessControlerProxy:
             **kwargs
         )
 
-    def similarity_product(self, query: str, codigo: str, numero_resultados: int = 15, min_score: int = 0) -> Dict:
+    @staticmethod
+    def _params(**params):
+        return {key: value for key, value in params.items() if value is not None}
+
+    def similarity_product(
+        self,
+        query: str,
+        codigo: str = "",
+        numero_resultados: int = 15,
+        min_score: int = 0,
+        **extra_params
+    ) -> Dict:
         return self._get(
             "/product/similarity",
-            params={
-                "codigo": codigo,
-                "query": query,
-                "numero_resultados": numero_resultados,
-                "min_score": min_score
-            }
+            params=self._params(
+                codigo=codigo,
+                query=query,
+                numero_resultados=numero_resultados,
+                min_score=min_score,
+                **extra_params
+            )
         )
 
-    def similarity_client(self, query: str, numero_resultados: int = 15, min_score: int = 0) -> Dict:
+    def similarity_client(
+        self,
+        query: str,
+        numero_resultados: int = 15,
+        min_score: int = 0,
+        **extra_params
+    ) -> Dict:
         return self._get(
             "/client/similarity",
-            params={
-                "query": query,
-                "numero_resultados": numero_resultados,
-                "min_score": min_score
-            }
+            params=self._params(
+                query=query,
+                numero_resultados=numero_resultados,
+                min_score=min_score,
+                **extra_params
+            )
         )
 
-    def get_product_price(self, product_id: str, client_id: str) -> Dict:
+    def get_product_price(
+        self,
+        product_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+        referencia_producto: Optional[str] = None,
+        referencia_cliente: Optional[str] = None,
+        **extra_params
+    ) -> Dict:
         return self._get(
             "/product/price",
-            params={
-                "referencia_producto": product_id,
-                "referencia_cliente": client_id
-            }
+            params=self._params(
+                referencia_producto=referencia_producto or product_id,
+                referencia_cliente=referencia_cliente or client_id,
+                **extra_params
+            )
         )
 
-    def validar_precios(self, payload: Dict) -> Dict:
+    def validar_precios(self, payload: Optional[Dict] = None, **extra_payload) -> Dict:
+        data = payload.copy() if payload else {}
+        data.update(extra_payload)
         return self._post(
             "/price/validate",
-            json=payload
+            json=data
         )
 
     def buscar_contacto_por_email(
         self,
-        thirdparty_id: str,
         email: str,
-        numero_resultados: int = 1
+        thirdparty_id: Optional[str] = None,
+        numero_resultados: int = 1,
+        **extra_params
     ) -> Dict:
         return self._get(
             "/contact/search/email",
-            params={
-                "thirdparty_id": thirdparty_id,
-                "email": email,
-                "numero_resultados": numero_resultados
-            }
+            params=self._params(
+                thirdparty_id=thirdparty_id,
+                email=email,
+                numero_resultados=numero_resultados,
+                **extra_params
+            )
         )
 
     def buscar_contacto(
         self,
-        query: str,
+        query: Optional[str] = None,
         thirdparty_id: Optional[str] = None,
         numero_resultados: int = 5,
-        min_score: int = 0
+        min_score: int = 0,
+        **extra_params
     ) -> Dict:
-        params = {
-            "query": query,
-            "numero_resultados": numero_resultados,
-            "min_score": min_score
-        }
-
-        if thirdparty_id is not None:
-            params["thirdparty_id"] = thirdparty_id
-
         return self._get(
             "/contact/search",
-            params=params
+            params=self._params(
+                query=query,
+                thirdparty_id=thirdparty_id,
+                numero_resultados=numero_resultados,
+                min_score=min_score,
+                **extra_params
+            )
         )
