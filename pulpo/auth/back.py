@@ -28,7 +28,7 @@ from datetime import datetime
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
-from pulpo.auth.general import Auth, set_service_token, get_service_token, set_user_token
+from pulpo.auth.general import Auth, get_service_auth, set_user_token
 
 # ==========================
 # 🔧 LOG CONFIG
@@ -99,7 +99,7 @@ RESPONSE=$(curl -s -X POST \
   "https://seguridad.merocomsolutions.com/realms/CompAI/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=password" \
-  -d "client_id=Contabilidad" \
+  -d "_id=Contabilidad" \
   -d "client_secret=ZTp7gW3N3krrlP9xzPVJz3k0e9ogYVmt" \
   -d "username=pepe" \
   -d "password=pepe" \
@@ -165,22 +165,16 @@ async def verify_token(
     ):
 
         log.warning(
-            "🔓 Acceso con API KEY "
-            "(modo desarrollo)"
-        )
-
-        log.warning(
             "[auth-back] DEV_API_KEY aceptada "
             f"method={request.method} path={request.url.path}"
         )
-        set_service_token(DEV_API_KEY)
-
+        
+        set_user_token(DEV_API_KEY)
+        
         return {
             "preferred_username": "dev_user",
-            "realm_access": {
-                "roles": ["admin"]
-            },
-            "azp": CLIENT_ID_FRONT,
+            "realm_access": {"roles": ["admin"]},
+            "azp": "dev",
             "dev_mode": True,
         }
 
@@ -264,34 +258,7 @@ async def verify_token(
     # ==========================
     try:
 
-        service_token = get_service_token()
-
-        service_claims = jwt.decode(
-            service_token,
-            options={
-                "verify_signature":
-                False
-            },
-        )
-
-        expected_client_id = (
-            service_claims.get("azp")
-        )
-        log.info(
-            "[auth-back] identidad servicio obtenida "
-            f"method={request.method} path={request.url.path} "
-            f"expected_client_id={expected_client_id} "
-            f"service_aud={service_claims.get('aud')} "
-            f"service_exp={service_claims.get('exp')}"
-        )
-
-        if not expected_client_id:
-            log.error(
-                "[auth-back] El token de servicio no contiene 'azp'"
-            )
-            raise RuntimeError(
-                "El token de servicio no contiene azp"
-            )
+        service_id = get_service_auth().client_id  
 
     except Exception as e:
 
@@ -316,27 +283,24 @@ async def verify_token(
     if isinstance(aud, str):
         aud = [aud]
 
-    if expected_client_id not in aud:
+    log.info(
+        "[auth-back] validando audience "
+        f"method={request.method} path={request.url.path} "
+        f"expected={service_id} aud_recibido={aud}"
+    )
 
+    if service_id not in aud:
         log.warning(
             "[auth-back] Token no destinado a este servicio "
             f"method={request.method} path={request.url.path} "
-            f"esperado={expected_client_id} aud_recibido={aud} "
+            f"esperado={service_id} aud_recibido={aud} "
             f"azp={decoded.get('azp')} sub={decoded.get('sub')}"
         )
-
         raise HTTPException(
-            status_code=(
-                status.HTTP_403_FORBIDDEN
-            ),
-            detail=(
-                "Token no destinado "
-                f"a este servicio "
-                f"(esperado: "
-                f"'{expected_client_id}', "
-                f"aud recibido: {aud})."
-            ),
-        )
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Token no destinado a este servicio (esperado: '{service_id}', aud recibido: {aud})")
+
+    
 
     # ==========================
     # ✅ OK
@@ -353,27 +317,33 @@ async def verify_token(
         f"method={request.method} path={request.url.path} "
         f"username={decoded.get('preferred_username')} "
         f"azp={decoded.get('azp')} aud={aud} "
-        f"expected_client_id={expected_client_id} "
+        f"service_id={service_id} "
         f"roles={decoded.get('realm_access', {}).get('roles', [])}"
     )
 
+    # ==========================
+    # 🔄 USER TOKEN
+    # ==========================
     if user_token:
         log.debug(
             "[auth-back] propagando X-User-Token existente "
             f"method={request.method} path={request.url.path}"
         )
         set_user_token(user_token)
-    elif decoded.get("azp") == CLIENT_ID_FRONT:
+    else:
         log.debug(
-            "[auth-back] guardando token de front como user token "
+            "[auth-back] guardando token entrante como user token "
             f"method={request.method} path={request.url.path}"
         )
         set_user_token(incoming_token)
 
+
+    # ==========================
+    # ✅ OK
+    # ==========================
     log.info(
         "[auth-back] verify_token ok "
-        f"method={request.method} path={request.url.path} "
-        f"expected_client_id={expected_client_id}"
+        f"method={request.method} path={request.url.path}"
     )
     return decoded
 
@@ -409,7 +379,10 @@ if __name__ == "__main__":
         print("\n🔄 PASO 4: Token Exchange (mismo cliente)")
         print("-" * 70)
         auth2 = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
-        token_response2 = auth2.exchange_token_from(auth)
+        
+        token_response2 = auth2.exchange_token_from(
+            subject_token=token_response['access_token'], 
+            target_client_id=CLIENT_ID)
 
         print("✅ Token exchange exitoso")
         print(f"   Nuevo token: {token_response2['access_token'][:50]}...")

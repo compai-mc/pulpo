@@ -47,114 +47,6 @@ def _safe_claims(token: str | None) -> dict:
     }
 
 
-_user_token_var = ContextVar(
-    "user_token",
-    default=None
-)
-
-def set_user_token(token: str):
-    log.debug(f"[auth] set_user_token token={_token_hint(token)} claims={_safe_claims(token)}")
-    _user_token_var.set(token)
-
-
-def get_user_token() -> str | None:
-    return _user_token_var.get()
-
-
-_service_token = None
-
-def set_service_token(token: str):
-    global _service_token
-    _service_token = token
-    log.info(f"[auth] set_service_token token={_token_hint(token)} claims={_safe_claims(token)}")
-
-
-def get_service_token() -> str:
-
-    if not _service_token:
-        log.error("[auth] get_service_token fallido: no hay token de servicio en memoria")
-        raise RuntimeError(
-            "No hay token de servicio"
-        )
-
-    log.debug(f"[auth] get_service_token ok token={_token_hint(_service_token)}")
-    return _service_token
-
-
-# Tokens inter-micro tras un exchange, evita pedir tokens cada vez
-_micro_token_cache = {} 
-
-# ==========================
-# 🔄 TOKEN EXCHANGE + CACHÉ
-# ==========================
-def get_token_exchange(target_client_id, target_client_secret, subject_token):
-
-    now = time.time()
-    log.info(
-        "[auth] token_exchange solicitado "
-        f"target_client_id={target_client_id} "
-        f"subject={_token_hint(subject_token)} "
-        f"subject_claims={_safe_claims(subject_token)}"
-    )
-
-    # Limpiando tokens caducados
-    expired = [
-        k for k, v in _micro_token_cache.items()
-        if now >= v["exp"]
-    ]
-
-    for k in expired:
-        log.debug(f"[auth] token_exchange cache expirado key_client_id={k[0]}")
-        del _micro_token_cache[k]
-
-    if subject_token == DEV_API_KEY:
-        log.warning(
-            "[auth] token_exchange usando DEV_API_KEY como token inter-micro "
-            f"target_client_id={target_client_id}"
-        )
-        return {
-            "access_token": DEV_API_KEY,
-            "expires_in": 365 * 24 * 3600,
-            "exp": now + 365 * 24 * 3600
-        }
-    
-    key = (target_client_id, subject_token)
-
-    cached = _micro_token_cache.get(key)
-    if cached and now < cached["exp"] - 10:
-        log.debug(
-            "[auth] token_exchange cache hit "
-            f"target_client_id={target_client_id} exp={cached['exp']}"
-        )
-        return cached
-
-    log.info(f"[auth] token_exchange cache miss target_client_id={target_client_id}")
-
-    auth_destino = Auth(
-        client_id=target_client_id,
-        client_secret=target_client_secret
-    )
-
-    result = auth_destino.exchange_token_from(subject_token)
-
-    expires_in = result.get("expires_in") or 300
-
-    cached = {
-        "access_token": result["access_token"],
-        "expires_in": expires_in,
-        "exp": now + expires_in
-    }
-
-    _micro_token_cache[key] = cached
-    log.info(
-        "[auth] token_exchange ok "
-        f"target_client_id={target_client_id} expires_in={expires_in} "
-        f"token={_token_hint(cached['access_token'])} "
-        f"claims={_safe_claims(cached['access_token'])}"
-    )
-
-    return cached
-
 
 
 class MicroTokenManager:
@@ -187,11 +79,12 @@ class MicroTokenManager:
 
     def refresh(self):
         log.info(f"[auth] MicroTokenManager.refresh inicio client_id={self.client_id}")
+        
+        subject_token = get_user_token() or get_service_auth().token
 
         token = get_token_exchange(
-            self.client_id,
-            self.client_secret,
-            get_service_token()
+            target_client_id=self.client_id,
+            subject_token=subject_token
         )
 
         self.cached = {
@@ -321,6 +214,7 @@ class Auth:
         self.refresh_token = ""
         self.public_key = None
         self.otp = None
+
         log.debug(
             "[auth] Auth inicializado "
             f"client_id={client_id} realm={realm} base_url={base_url}"
@@ -430,7 +324,7 @@ class Auth:
         )
 
         # Aqui ponemos el token recien creado
-        set_service_token(self.token)
+        set_service_auth(self)
 
         return {
             "access_token": self.token,
@@ -618,7 +512,8 @@ class Auth:
     # ==========================
     # TOKEN EXCHANGE
     # ==========================
-    def exchange_token_from(self, subject_token: str):
+    def exchange_token_from(self, target_client_id: str, subject_token: str):
+                            
         log.info(
             "[auth] exchange_token_from inicio "
             f"client_id={self.client_id} subject={_token_hint(subject_token)} "
@@ -636,6 +531,7 @@ class Auth:
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+            "audience": target_client_id 
         }
 
 
@@ -664,6 +560,19 @@ class Auth:
 
         self.token = access_token
         self.decoded_token = self.__decode_jwt(access_token)
+
+        aud = self.decoded_token.get("aud")
+
+        if isinstance(aud, str):
+            aud = [aud]
+
+        if target_client_id not in (aud or []):
+            log.error(
+                "[auth] exchange_token_from ERROR: audience incorrecto "
+                f"esperado={target_client_id} recibido={aud}"
+            )
+            raise RuntimeError("Token exchange devolvió aud incorrecto")
+
         log.info(
             "[auth] exchange_token_from ok "
             f"client_id={self.client_id} azp={self.decoded_token.get('azp')} "
@@ -679,3 +588,107 @@ class Auth:
 
     def __repr__(self):
         return f"Auth(realm={self.realm}, client_id={self.client_id}, has_token={bool(self.token)})"
+
+
+
+_user_token_var = ContextVar(
+    "user_token",
+    default=None
+)
+
+def set_user_token(token: str):
+    log.debug(f"[auth] set_user_token token={_token_hint(token)} claims={_safe_claims(token)}")
+    _user_token_var.set(token)
+
+
+def get_user_token() -> str | None:
+    return _user_token_var.get()
+
+
+_service_auth = None
+
+def set_service_auth(auth: Auth):
+    global _service_auth
+    _service_auth = auth
+
+def get_service_auth() -> Auth:
+    if not _service_auth:
+        raise RuntimeError("No hay auth")
+    return _service_auth
+
+
+# Tokens inter-micro tras un exchange, evita pedir tokens cada vez
+_micro_token_cache = {} 
+
+# ==========================
+# 🔄 TOKEN EXCHANGE + CACHÉ
+# ==========================
+def get_token_exchange(target_client_id, subject_token):
+
+    now = time.time()
+    log.info(
+        "[auth] token_exchange solicitado "
+        f"target_client_id={target_client_id} "
+        f"subject={_token_hint(subject_token)} "
+        f"subject_claims={_safe_claims(subject_token)}"
+    )
+
+    # Limpiando tokens caducados
+    expired = [
+        k for k, v in _micro_token_cache.items()
+        if now >= v["exp"]
+    ]
+
+    for k in expired:
+        log.debug(f"[auth] token_exchange cache expirado key_client_id={k[0]}")
+        del _micro_token_cache[k]
+
+    if subject_token == DEV_API_KEY:
+        log.warning(
+            "[auth] token_exchange usando DEV_API_KEY como token inter-micro "
+            f"target_client_id={target_client_id}"
+        )
+        return {
+            "access_token": DEV_API_KEY,
+            "expires_in": 365 * 24 * 3600,
+            "exp": now + 365 * 24 * 3600
+        }
+    
+    key = (target_client_id, subject_token)
+
+    cached = _micro_token_cache.get(key)
+    if cached and now < cached["exp"] - 10:
+        log.debug(
+            "[auth] token_exchange cache hit "
+            f"target_client_id={target_client_id} exp={cached['exp']}"
+        )
+        return cached
+
+    log.info(f"[auth] token_exchange cache miss target_client_id={target_client_id}")
+
+    auth = get_service_auth()
+
+    result = auth.exchange_token_from(
+        target_client_id=target_client_id,
+        subject_token=subject_token
+        )
+
+    expires_in = result.get("expires_in") or 300
+
+    cached = {
+        "access_token": result["access_token"],
+        "expires_in": expires_in,
+        "exp": now + expires_in
+    }
+
+    _micro_token_cache[key] = cached
+    log.info(
+        "[auth] token_exchange ok "
+        f"target_client_id={target_client_id} expires_in={expires_in} "
+        f"token={_token_hint(cached['access_token'])} "
+        f"claims={_safe_claims(cached['access_token'])}"
+    )
+
+    return cached
+
+
