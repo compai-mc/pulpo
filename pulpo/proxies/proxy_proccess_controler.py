@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Optional
 
 from pulpo.auth.general import MicroTokenManager, MicroHttpClient
@@ -8,10 +9,29 @@ CLIENT_ID = require_env("CLIENT_ID_PROCESSCONTROLLER")
 CLIENT_SECRET = require_env("CLIENT_SECRET_PROCESSCONTROLLER")
 
 
+def _float_env(var_name: str, default: float) -> float:
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+PROCCESSCONTROLER_TIMEOUT = _float_env("PROCCESSCONTROLER_TIMEOUT", 600.0)
+
+
 # Cliente proxy para microservicio de similitud de datos en milvus (7417)
 class ProccessControlerProxy:
-    def __init__(self, base_url: str = PROCCESSCONTROLER_URL, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        base_url: str = PROCCESSCONTROLER_URL,
+        api_key: Optional[str] = None,
+        timeout: float = PROCCESSCONTROLER_TIMEOUT
+    ):
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
         self.headers = {
             "Content-Type": "application/json"
         }
@@ -25,6 +45,7 @@ class ProccessControlerProxy:
         self.client = MicroHttpClient(self.tm)
 
     def _get(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.get(
             f"{self.base_url}{path}",
             headers=self.headers,
@@ -32,6 +53,7 @@ class ProccessControlerProxy:
         )
 
     def _post(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
         return self.client.post(
             f"{self.base_url}{path}",
             headers=self.headers,
