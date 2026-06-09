@@ -70,6 +70,69 @@ class ProccessControlerProxy:
             )
         )
 
+    def resolver_producto(
+        self,
+        query: str = "",
+        codigo: str = "",
+        client_ref: str = "",
+        **extra_params
+    ) -> Dict:
+        """
+        Llama al resolver LLM de productos.
+        """
+        return self._get(
+            "/product/resolverLLM",
+            params=self._params(
+                query=query,
+                codigo=codigo,
+                client_ref=client_ref,
+                **extra_params
+            )
+        )
+
+    def obtener_auditoria_resolver(self, auditoria_id: str) -> Dict:
+        """
+        Recupera la auditoria completa de una decision del resolver.
+        """
+        return self._get(f"/product/resolverLLM/auditoria/{auditoria_id}")
+
+    def registrar_precedente_producto(
+        self,
+        client_ref: str,
+        query_original: str,
+        fk_product_humano: int,
+        fk_product_ia: Optional[int] = None,
+        **extra_payload
+    ) -> Dict:
+        """
+        Registra un precedente tras la validacion humana de un producto.
+        """
+        payload = {
+            "client_ref": client_ref,
+            "query_original": query_original,
+            "fk_product_humano": fk_product_humano,
+        }
+        if fk_product_ia is not None and fk_product_ia != fk_product_humano:
+            payload["fk_product_ia"] = fk_product_ia
+        payload.update(extra_payload)
+        return self._post("/product/precedente", json=payload)
+
+    def crear_instruccion_producto(
+        self,
+        scope_ref: str,
+        texto: str,
+        **extra_payload
+    ) -> Dict:
+        """
+        Crea una instruccion manual asociada a un grupo de empresas.
+        """
+        payload = {
+            "scope_ref": scope_ref,
+            "texto": texto,
+        }
+        payload.update(extra_payload)
+        return self._post("/context/instruccion", json=payload)
+
     def similarity_client(
         self,
         query: str,
