@@ -150,6 +150,24 @@ class ERPProxySincrono:
             json=payload or {}
         )
 
+    def crear_documento_shipment(
+        self,
+        shipment_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/shipments/{shipment_id}/create/document",
+            json=payload or {}
+        )
+
+    def descargar_documento_shipment(
+        self,
+        shipment_id: int
+    ):
+        return self._get(
+            f"/shipments/{shipment_id}/document/download"
+        )
+
     # ============================================================
     # Orders
     # ============================================================
@@ -525,6 +543,24 @@ class ERPProxySincrono:
         return self._put(
             f"/invoices/{invoice_id}/conciliacion",
             json=payload
+        )
+
+    def crear_documento_factura(
+        self,
+        invoice_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/invoices/{invoice_id}/create/document",
+            json=payload or {}
+        )
+
+    def descargar_documento_factura(
+        self,
+        invoice_id: int
+    ):
+        return self._get(
+            f"/invoices/{invoice_id}/document/download"
         )
 
 

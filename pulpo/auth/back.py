@@ -28,7 +28,7 @@ from datetime import datetime
 
 from pulpo.util.util import require_env
 from pulpo.logueador import log
-from pulpo.auth.general import Auth, set_service_token, get_service_token, set_user_token
+from pulpo.auth.general import Auth, get_service_auth, set_user_token
 
 # ==========================
 # 🔧 LOG CONFIG
@@ -47,6 +47,33 @@ try:
     DEV_API_KEY = require_env("DEV_API_KEY")
 except Exception:
     DEV_API_KEY = None
+
+
+def _token_hint(token: str | None) -> str:
+    if not token:
+        return "<empty>"
+    token = str(token)
+    if token == DEV_API_KEY:
+        return "<DEV_API_KEY>"
+    return f"{token[:12]}...{token[-8:]} len={len(token)}"
+
+
+def _unsafe_claims(token: str | None) -> dict:
+    if not token or token == DEV_API_KEY:
+        return {}
+    try:
+        claims = jwt.decode(str(token), options={"verify_signature": False})
+    except Exception as exc:
+        return {"decode_error": str(exc)}
+
+    return {
+        "iss": claims.get("iss"),
+        "azp": claims.get("azp"),
+        "aud": claims.get("aud"),
+        "sub": claims.get("sub"),
+        "preferred_username": claims.get("preferred_username"),
+        "exp": claims.get("exp"),
+    }
 
 bearer_scheme = HTTPBearer(auto_error=True)
 
@@ -72,7 +99,7 @@ RESPONSE=$(curl -s -X POST \
   "https://seguridad.merocomsolutions.com/realms/CompAI/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=password" \
-  -d "client_id=Contabilidad" \
+  -d "_id=Contabilidad" \
   -d "client_secret=ZTp7gW3N3krrlP9xzPVJz3k0e9ogYVmt" \
   -d "username=pepe" \
   -d "password=pepe" \
@@ -116,6 +143,18 @@ async def verify_token(
     user_token = request.headers.get(
         "X-User-Token"
     )
+    incoming_claims_hint = _unsafe_claims(incoming_token)
+    user_claims_hint = _unsafe_claims(user_token)
+
+    log.info(
+        "[auth-back] verify_token inicio "
+        f"method={request.method} path={request.url.path} "
+        f"query={request.url.query} app_env={APP_ENV} "
+        f"incoming={_token_hint(incoming_token)} "
+        f"incoming_claims={incoming_claims_hint} "
+        f"has_user_token={bool(user_token)} "
+        f"user_claims={user_claims_hint}"
+    )
 
     # ==========================
     # 🚀 MODO DEV: API KEY
@@ -126,18 +165,16 @@ async def verify_token(
     ):
 
         log.warning(
-            "🔓 Acceso con API KEY "
-            "(modo desarrollo)"
+            "[auth-back] DEV_API_KEY aceptada "
+            f"method={request.method} path={request.url.path}"
         )
-
-        set_service_token(DEV_API_KEY)
-
+        
+        set_user_token(DEV_API_KEY)
+        
         return {
             "preferred_username": "dev_user",
-            "realm_access": {
-                "roles": ["admin"]
-            },
-            "azp": CLIENT_ID_FRONT,
+            "realm_access": {"roles": ["admin"]},
+            "azp": "dev",
             "dev_mode": True,
         }
 
@@ -152,6 +189,10 @@ async def verify_token(
                 incoming_token
             )
         )
+        log.debug(
+            "[auth-back] signing key obtenida "
+            f"method={request.method} path={request.url.path}"
+        )
 
         decoded: dict = jwt.decode(
             incoming_token,
@@ -163,10 +204,21 @@ async def verify_token(
                 "verify_aud": False,
             },
         )
+        log.info(
+            "[auth-back] token entrante validado "
+            f"method={request.method} path={request.url.path} "
+            f"azp={decoded.get('azp')} aud={decoded.get('aud')} "
+            f"sub={decoded.get('sub')} username={decoded.get('preferred_username')} "
+            f"exp={decoded.get('exp')}"
+        )
 
     except jwt.ExpiredSignatureError:
 
-        log.warning("Token expirado")
+        log.warning(
+            "[auth-back] Token expirado "
+            f"method={request.method} path={request.url.path} "
+            f"incoming_claims={incoming_claims_hint}"
+        )
 
         raise HTTPException(
             status_code=(
@@ -182,7 +234,10 @@ async def verify_token(
     except jwt.InvalidTokenError as e:
 
         log.warning(
-            f"Token invalido: {e}"
+            "[auth-back] Token invalido "
+            f"method={request.method} path={request.url.path} "
+            f"error={e} incoming={_token_hint(incoming_token)} "
+            f"incoming_claims={incoming_claims_hint}"
         )
 
         raise HTTPException(
@@ -203,34 +258,14 @@ async def verify_token(
     # ==========================
     try:
 
-        service_token = get_service_token()
-
-        service_claims = jwt.decode(
-            service_token,
-            options={
-                "verify_signature":
-                False
-            },
-        )
-
-        expected_client_id = (
-            service_claims.get("azp")
-        )
-
-        if not expected_client_id:
-            log.error(
-                "El token de servicio no contiene 'azp'"
-            )
-            raise RuntimeError(
-                "El token de servicio no contiene azp"
-            )
+        service_id = get_service_auth().client_id  
 
     except Exception as e:
 
         log.error(
-            "No se pudo obtener "
-            "la identidad del servicio: "
-            f"{e}"
+            "[auth-back] No se pudo obtener la identidad del servicio "
+            f"method={request.method} path={request.url.path} error={e} "
+            f"incoming_claims={incoming_claims_hint}"
         )
 
         raise HTTPException(
@@ -248,28 +283,24 @@ async def verify_token(
     if isinstance(aud, str):
         aud = [aud]
 
-    if expected_client_id not in aud:
+    log.info(
+        "[auth-back] validando audience "
+        f"method={request.method} path={request.url.path} "
+        f"expected={service_id} aud_recibido={aud}"
+    )
 
+    if service_id not in aud:
         log.warning(
-            "Token no destinado "
-            f"a este servicio "
-            f"(esperado: "
-            f"'{expected_client_id}', "
-            f"aud recibido: {aud})"
+            "[auth-back] Token no destinado a este servicio "
+            f"method={request.method} path={request.url.path} "
+            f"esperado={service_id} aud_recibido={aud} "
+            f"azp={decoded.get('azp')} sub={decoded.get('sub')}"
         )
-
         raise HTTPException(
-            status_code=(
-                status.HTTP_403_FORBIDDEN
-            ),
-            detail=(
-                "Token no destinado "
-                f"a este servicio "
-                f"(esperado: "
-                f"'{expected_client_id}', "
-                f"aud recibido: {aud})."
-            ),
-        )
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Token no destinado a este servicio (esperado: '{service_id}', aud recibido: {aud})")
+
+    
 
     # ==========================
     # ✅ OK
@@ -281,11 +312,39 @@ async def verify_token(
         f"{decoded.get('realm_access', {}).get('roles', [])}"
     )
 
+    log.info(
+        "[auth-back] Token valido "
+        f"method={request.method} path={request.url.path} "
+        f"username={decoded.get('preferred_username')} "
+        f"azp={decoded.get('azp')} aud={aud} "
+        f"service_id={service_id} "
+        f"roles={decoded.get('realm_access', {}).get('roles', [])}"
+    )
+
+    # ==========================
+    # 🔄 USER TOKEN
+    # ==========================
     if user_token:
+        log.debug(
+            "[auth-back] propagando X-User-Token existente "
+            f"method={request.method} path={request.url.path}"
+        )
         set_user_token(user_token)
-    elif decoded.get("azp") == CLIENT_ID_FRONT:
+    else:
+        log.debug(
+            "[auth-back] guardando token entrante como user token "
+            f"method={request.method} path={request.url.path}"
+        )
         set_user_token(incoming_token)
 
+
+    # ==========================
+    # ✅ OK
+    # ==========================
+    log.info(
+        "[auth-back] verify_token ok "
+        f"method={request.method} path={request.url.path}"
+    )
     return decoded
 
 
@@ -320,7 +379,10 @@ if __name__ == "__main__":
         print("\n🔄 PASO 4: Token Exchange (mismo cliente)")
         print("-" * 70)
         auth2 = Auth(base_url=KEYCLOAK_URL, realm=REALM, client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
-        token_response2 = auth2.exchange_token_from(auth)
+        
+        token_response2 = auth2.exchange_token_from(
+            subject_token=token_response['access_token'], 
+            target_client_id=CLIENT_ID)
 
         print("✅ Token exchange exitoso")
         print(f"   Nuevo token: {token_response2['access_token'][:50]}...")

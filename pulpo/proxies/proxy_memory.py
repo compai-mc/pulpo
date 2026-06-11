@@ -1,13 +1,11 @@
 from typing import Dict, Any, Optional
 
-import httpx
-import os
-
+from pulpo.auth.general import MicroTokenManager, MicroHttpClient
 from pulpo.util.util import require_env
 
-
 URL_MEMORY = require_env("URL_MEMORY")
-MEMORY_TIMEOUT = float(os.getenv("MEMORY_TIMEOUT", "30"))
+CLIENT_ID = require_env("CLIENT_ID_MEMORY")
+CLIENT_SECRET = require_env("CLIENT_SECRET_MEMORY")
 
 
 class MemoryAPIClient:
@@ -22,7 +20,11 @@ class MemoryAPIClient:
         self.headers = {
             "Content-Type": "application/json"
         }
-        self.client = httpx.Client(timeout=MEMORY_TIMEOUT)
+        self.tm = MicroTokenManager(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
+        self.client = MicroHttpClient(self.tm)
 
         data = self._post(
             "/create",
@@ -34,43 +36,30 @@ class MemoryAPIClient:
         self.memory_id = data["memory_id"]
 
     def _get(self, path: str, **kwargs):
-        response = self.client.get(
+        return self.client.get(
             f"{self.base_url}{path}",
             headers=self.headers,
             **kwargs
         )
-        response.raise_for_status()
-        return response.json()
 
     def _post(self, path: str, **kwargs):
-        response = self.client.post(
+        return self.client.post(
             f"{self.base_url}{path}",
             headers=self.headers,
             **kwargs
         )
-        response.raise_for_status()
-        return response.json()
 
     def _delete(self, path: str, **kwargs):
-        response = self.client.delete(
+        return self.client.delete(
             f"{self.base_url}{path}",
             headers=self.headers,
             **kwargs
         )
-        response.raise_for_status()
-        return response.json()
 
-    def add(
-        self,
-        content: str,
-        metadata: Optional[Dict] = None,
-        memory_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def add(self, content: str, metadata: Optional[Dict] = None, memory_id: Optional[str] = None) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
-            raise ValueError(
-                "Se necesita un memory_id (llama primero a create_memory o pasalo explicitamente)"
-            )
+            raise ValueError("Se necesita un memory_id (llama primero a create_memory o pasalo explicitamente)")
         return self._post(
             "/add",
             json={
@@ -80,13 +69,7 @@ class MemoryAPIClient:
             }
         )
 
-    def similarity_search(
-        self,
-        query: str,
-        k: int = 5,
-        min_score: float = 0.7,
-        memory_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def similarity_search(self, query: str, k: int = 5, min_score: float = 0.7, memory_id: Optional[str] = None) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
             raise ValueError("Se necesita un memory_id")
@@ -100,11 +83,7 @@ class MemoryAPIClient:
             }
         )
 
-    def list_items(
-        self,
-        memory_id: Optional[str] = None,
-        limit: int = 100
-    ) -> Dict[str, Any]:
+    def list_items(self, memory_id: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
         mid = memory_id or self.memory_id
         if not mid:
             raise ValueError("Se necesita un memory_id para listar items")
@@ -123,6 +102,3 @@ class MemoryAPIClient:
 
     def list_memories(self) -> Dict[str, Any]:
         return self._get("")
-
-    def close(self):
-        self.client.close()
