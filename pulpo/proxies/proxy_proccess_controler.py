@@ -124,18 +124,31 @@ class ProccessControlerProxy:
         query_original: str,
         fk_product_humano: int,
         fk_product_ia: Optional[int] = None,
+        modo: Optional[str] = None,
+        confianza: Optional[str] = None,
+        auditoria_id: Optional[str] = None,
         **extra_payload
     ) -> Dict:
         """
         Registra un precedente tras la validacion humana de un producto.
+
+        fk_product_ia se envia siempre que exista, aunque coincida con el humano.
+        modo, confianza y auditoria_id cierran el bucle de medicion del resolver.
         """
         payload = {
             "client_ref": client_ref,
             "query_original": query_original,
             "fk_product_humano": fk_product_humano,
         }
-        if fk_product_ia is not None and fk_product_ia != fk_product_humano:
+        if fk_product_ia is not None:
             payload["fk_product_ia"] = fk_product_ia
+        for campo, valor in (
+            ("modo", modo),
+            ("confianza", confianza),
+            ("auditoria_id", auditoria_id)
+        ):
+            if valor is not None:
+                payload[campo] = valor
         payload.update(extra_payload)
         return self._post("/product/precedente", json=payload)
 
