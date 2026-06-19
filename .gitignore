@@ -11,3 +11,4 @@ pulpo/proxies/__pycache__/
 pulpo/auth/__pycache__/
 pulpo/util/__pycache__/
 pulpo/__pycache__
+/.external
