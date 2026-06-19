@@ -150,6 +150,16 @@ class ERPProxySincrono:
             json=payload or {}
         )
 
+    def crear_factura_shipment(
+        self,
+        shipment_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/shipments/{shipment_id}/invoice",
+            json=payload or {}
+        )
+
     def crear_documento_shipment(
         self,
         shipment_id: int,
@@ -214,6 +224,16 @@ class ERPProxySincrono:
     ):
         return self._post(
             f"/orders/{order_id}/invoice",
+            json=payload or {}
+        )
+
+    def marcar_pedido_facturado(
+        self,
+        order_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/orders/{order_id}/mark-billed",
             json=payload or {}
         )
 
@@ -463,6 +483,29 @@ class ERPProxySincrono:
             params=params or None
         )
 
+    def crear_factura_venta_personalizada(
+        self,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            "/invoices/sales/custom",
+            json=payload
+        )
+
+    def facturas_por_ref_cliente(
+        self,
+        ref_client: str,
+        **params
+    ):
+        ref_encoded = urllib.parse.quote(
+            ref_client,
+            safe=""
+        )
+        return self._get(
+            f"/invoices/by-ref-client/{ref_encoded}",
+            params=params or None
+        )
+
     def facturas_venta(self, limit: int = 100, page: int = 0, from_date: str = None, to_date: str = None, include_raw: bool = False):
         return self._get(
             "/invoices/sales",
@@ -568,6 +611,57 @@ class ERPProxySincrono:
     # Proposal
     # ============================================================
 
+    def propuestas_abiertas(
+        self,
+        **params
+    ):
+        return self._get(
+            "/proposals/open",
+            params=params or None
+        )
+
+    def propuesta_por_ref(
+        self,
+        proposal_ref: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            proposal_ref,
+            safe=""
+        )
+        return self._get(
+            f"/proposals/by-ref/{ref_encoded}"
+        )
+
+    def propuesta_por_ref_cliente(
+        self,
+        ref_client: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            ref_client,
+            safe=""
+        )
+        return self._get(
+            f"/proposals/by-ref-client/{ref_encoded}"
+        )
+
+    def crear_documento_propuesta_por_id(
+        self,
+        proposal_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/proposals/{proposal_id}/create/document",
+            json=payload or {}
+        )
+
+    def descargar_documento_propuesta_por_id(
+        self,
+        proposal_id: int
+    ):
+        return self._get(
+            f"/proposals/{proposal_id}/document/download"
+        )
+
     def crear_presupuesto(
         self,
         payload: Dict[str, Any]
@@ -637,6 +731,34 @@ class ERPProxySincrono:
     ):
         return self._post(
             f"/proposal/{proposal_id}/validate"
+        )
+
+    def validar_propuesta_por_ref(
+        self,
+        proposal_ref: str,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        ref_encoded = urllib.parse.quote(
+            proposal_ref,
+            safe=""
+        )
+        return self._post(
+            f"/proposal/by-ref/{ref_encoded}/validate",
+            json=payload or {}
+        )
+
+    def validar_propuesta_por_ref_cliente(
+        self,
+        ref_client: str,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        ref_encoded = urllib.parse.quote(
+            ref_client,
+            safe=""
+        )
+        return self._post(
+            f"/proposal/by-ref-client/{ref_encoded}/validate",
+            json=payload or {}
         )
 
     def confirmar_propuesta(
