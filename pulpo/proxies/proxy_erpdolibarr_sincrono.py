@@ -237,6 +237,16 @@ class ERPProxySincrono:
             json=payload or {}
         )
 
+    def actualizar_productos_pedido(
+        self,
+        order_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._patch(
+            f"/orders/{order_id}/products",
+            json=payload
+        )
+
     # ============================================================
     # Products
     # ============================================================
@@ -660,6 +670,16 @@ class ERPProxySincrono:
     ):
         return self._get(
             f"/proposals/{proposal_id}/document/download"
+        )
+
+    def actualizar_productos_propuesta(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._patch(
+            f"/proposals/{proposal_id}/products",
+            json=payload
         )
 
     def crear_presupuesto(
