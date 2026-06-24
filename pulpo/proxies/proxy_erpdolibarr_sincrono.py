@@ -237,6 +237,16 @@ class ERPProxySincrono:
             json=payload or {}
         )
 
+    def validar_pedido(
+        self,
+        order_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/orders/{order_id}/validate",
+            json=payload or {}
+        )
+
     def actualizar_productos_pedido(
         self,
         order_id: int,
