@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, List
+import base64
 import os
 import urllib.parse
 
@@ -96,6 +97,25 @@ class ERPProxySincrono:
             **kwargs
         )
 
+    def _download(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
+        response = self.client._request(
+            "GET",
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
+
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type:
+            return response.json()
+
+        return {
+            "content_type": content_type or None,
+            "content_length": len(response.content),
+            "content_base64": base64.b64encode(response.content).decode("ascii"),
+        }
+
     # ============================================================
     # Shipments
     # ============================================================
@@ -174,7 +194,7 @@ class ERPProxySincrono:
         self,
         shipment_id: int
     ):
-        return self._get(
+        return self._download(
             f"/shipments/{shipment_id}/document/download"
         )
 
@@ -245,6 +265,26 @@ class ERPProxySincrono:
         return self._post(
             f"/orders/{order_id}/validate",
             json=payload or {}
+        )
+
+    def crear_documento_pedido(
+        self,
+        order_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/orders/{order_id}/create/document",
+            json=payload or {}
+        )
+
+    def descargar_documento_pedido(
+        self,
+        order_id: int,
+        generate_if_missing: bool = False
+    ):
+        return self._download(
+            f"/orders/{order_id}/document/download",
+            params={"generate_if_missing": generate_if_missing}
         )
 
     def actualizar_productos_pedido(
@@ -622,7 +662,7 @@ class ERPProxySincrono:
         self,
         invoice_id: int
     ):
-        return self._get(
+        return self._download(
             f"/invoices/{invoice_id}/document/download"
         )
 
@@ -678,7 +718,7 @@ class ERPProxySincrono:
         self,
         proposal_id: int
     ):
-        return self._get(
+        return self._download(
             f"/proposals/{proposal_id}/document/download"
         )
 
@@ -723,7 +763,7 @@ class ERPProxySincrono:
         self,
         name: str
     ):
-        return self._get(
+        return self._download(
             f"/proposal/{name}/document/download"
         )
 
