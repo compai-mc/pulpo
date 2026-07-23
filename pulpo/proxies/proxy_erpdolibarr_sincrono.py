@@ -623,6 +623,30 @@ class ERPProxySincrono:
         return self._get(
             f"/invoices/{invoice_id}/payments/banks"
         )
+
+    def validar_factura(
+        self,
+        invoice_id: int,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        return self._post(
+            f"/invoices/{invoice_id}/validate",
+            json=payload or {}
+        )
+
+    def validar_factura_por_ref(
+        self,
+        invoice_ref: str,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        ref_encoded = urllib.parse.quote(
+            invoice_ref,
+            safe=""
+        )
+        return self._post(
+            f"/invoices/by-ref/{ref_encoded}/validate",
+            json=payload or {}
+        )
     
     def actualizar_conciliacion_factura(
         self,
