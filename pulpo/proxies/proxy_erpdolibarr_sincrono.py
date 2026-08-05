@@ -140,6 +140,18 @@ class ERPProxySincrono:
             f"/shipments/by-order/{origin_id}"
         )
 
+    def shipment_por_ref(
+        self,
+        shipment_ref: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            shipment_ref,
+            safe=""
+        )
+        return self._get(
+            f"/shipments/by-ref/{ref_encoded}"
+        )
+
     def shipment_parametro(
         self,
         shipment_id: int,
@@ -227,6 +239,18 @@ class ERPProxySincrono:
 
         return self._get(
             f"/orders/by-ref/{ref_encoded}"
+        )
+
+    def pedido_por_ref_cliente(
+        self,
+        ref_client: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            ref_client,
+            safe=""
+        )
+        return self._get(
+            f"/orders/by-ref-client/{ref_encoded}"
         )
 
     def pedido(
