@@ -35,9 +35,7 @@ class ArangoEnv:
             password=password,
         )
 
-        self.collection = self.db.collection(
-            collection
-        )
+        self.collection = self.db.collection(collection)
 
     def load(self, config_id: str):
         for doc in self.collection.find(
@@ -60,3 +58,11 @@ class ArangoEnv:
             },
             overwrite=True,
         )
+
+    def put_config(self, config_id: str, config: dict):
+        for key, value in config.items():
+            self.put(
+                config_id=config_id,
+                key=key,
+                value=str(value),
+            )
