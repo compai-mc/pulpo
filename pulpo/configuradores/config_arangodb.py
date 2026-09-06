@@ -38,16 +38,33 @@ class ArangoEnv:
         self.collection = self.db.collection(collection)
 
     def load(self, config_id: str):
+
+        configuracion = {
+            "global": {},
+            "especifico": {},
+        }
+
         for doc in self.collection.find(
             {"config_id": config_id}
         ):
-            os.environ[doc["name"]] = str(doc["value"])
+            nombre = doc["name"]
+            valor = str(doc["value"])
+            tipo = doc.get("tipo", "especifico")
+
+            # También dejamos las variables disponibles
+            # directamente en el entorno
+            os.environ[nombre] = valor
+
+            configuracion[tipo][nombre] = valor
+
+        return configuracion
 
     def put(
         self,
         config_id: str,
         key: str,
         value: str,
+        tipo: str = "especifico",
     ):
         self.collection.insert(
             {
@@ -55,14 +72,25 @@ class ArangoEnv:
                 "config_id": config_id,
                 "name": key,
                 "value": value,
+                "tipo": tipo,
             },
             overwrite=True,
         )
 
-    def put_config(self, config_id: str, config: dict):
-        for key, value in config.items():
-            self.put(
-                config_id=config_id,
-                key=key,
-                value=str(value),
-            )
+    def put_config(
+        self,
+        config_id: str,
+        config: dict,
+    ):
+        for tipo in ("global", "especifico"):
+
+            valores = config.get(tipo, {})
+
+            for key, value in valores.items():
+
+                self.put(
+                    config_id=config_id,
+                    key=key,
+                    value=str(value),
+                    tipo=tipo,
+                )
