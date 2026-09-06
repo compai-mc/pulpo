@@ -1,0 +1,7 @@
+requests
+python-arango
+kafka-python
+hvac
+httpx
+json5
+PyJWT

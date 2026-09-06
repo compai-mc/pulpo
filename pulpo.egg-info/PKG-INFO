@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: pulpo
+Version: 5.9.9
+Requires-Dist: requests
+Requires-Dist: python-arango
+Requires-Dist: kafka-python
+Requires-Dist: hvac
+Requires-Dist: httpx
+Requires-Dist: json5
+Requires-Dist: PyJWT
+Dynamic: requires-dist

@@ -2,13 +2,13 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="5.9.9",
+    version="5.9.10",
     packages=find_packages(),
     install_requires=[
         "requests",
         "python-arango",
         "kafka-python",
-        "langroid",
+        #"langroid",
         "hvac",
         "httpx",
         "json5",
