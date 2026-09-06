@@ -24,6 +24,7 @@ class ArangoEnv:
         username: str = "root",
         password: str = "arangodb123",
         collection: str = "env",
+        application: str | None = None,
     ):
         client = ArangoClient(
             hosts=f"http://{host}:{port}"
@@ -37,6 +38,8 @@ class ArangoEnv:
 
         self.collection = self.db.collection(collection)
 
+        self.application = application
+
     def load(self, config_id: str):
 
         configuracion = {
@@ -49,13 +52,15 @@ class ArangoEnv:
         ):
             nombre = doc["name"]
             valor = str(doc["value"])
-            tipo = doc.get("tipo", "especifico")
+            scope = doc.get("scope", "global")
 
-            # También dejamos las variables disponibles
-            # directamente en el entorno
-            os.environ[nombre] = valor
+            if scope == "global":
+                configuracion["global"][nombre] = valor
+                os.environ[nombre] = valor
 
-            configuracion[tipo][nombre] = valor
+            elif scope == self.application:
+                configuracion["especifico"][nombre] = valor
+                os.environ[nombre] = valor
 
         return configuracion
 
@@ -64,27 +69,39 @@ class ArangoEnv:
         config_id: str,
         key: str,
         value: str,
-        tipo: str = "especifico",
+        scope: str = "global",
     ):
         self.collection.insert(
             {
-                "_key": f"{config_id}_{key}",
+                "_key": f"{config_id}_{scope}_{key}",
                 "config_id": config_id,
                 "name": key,
                 "value": value,
-                "tipo": tipo,
+                "scope": scope,
             },
             overwrite=True,
         )
+
+    def delete(
+        self,
+        config_id: str,
+        key: str,
+        scope: str = "global",
+    ):
+        document_key = f"{config_id}_{scope}_{key}"
+
+        if self.collection.has(document_key):
+            self.collection.delete(document_key)
+
+        # También eliminarla del entorno del proceso
+        os.environ.pop(key, None)
 
     def put_config(
         self,
         config_id: str,
         config: dict,
     ):
-        for tipo in ("global", "especifico"):
-
-            valores = config.get(tipo, {})
+        for scope, valores in config.items():
 
             for key, value in valores.items():
 
@@ -92,5 +109,5 @@ class ArangoEnv:
                     config_id=config_id,
                     key=key,
                     value=str(value),
-                    tipo=tipo,
+                    scope=scope,
                 )
