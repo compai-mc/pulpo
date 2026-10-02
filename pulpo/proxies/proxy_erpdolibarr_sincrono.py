@@ -152,6 +152,27 @@ class ERPProxySincrono:
             f"/shipments/by-ref/{ref_encoded}"
         )
 
+    def shipment_por_ref_full(
+        self,
+        shipment_ref: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            shipment_ref,
+            safe=""
+        )
+        return self._get(
+            f"/shipments/by-ref/{ref_encoded}/full"
+        )
+
+    def crear_shipment_parcial(
+        self,
+        payload: Dict[str, Any]
+    ):
+        return self._post(
+            "/shipments/partial",
+            json=payload
+        )
+
     def shipment_parametro(
         self,
         shipment_id: int,
@@ -253,6 +274,44 @@ class ERPProxySincrono:
             f"/orders/by-ref-client/{ref_encoded}"
         )
 
+    def pedidos_por_fecha(
+        self,
+        fecha: str,
+        **params
+    ):
+        return self._get(
+            f"/orders/by-date/{fecha}",
+            params=params or None
+        )
+
+    def actualizar_pedido_por_ref(
+        self,
+        order_ref: str,
+        payload: Dict[str, Any]
+    ):
+        ref_encoded = urllib.parse.quote(
+            order_ref,
+            safe=""
+        )
+        return self._patch(
+            f"/orders/by-ref/{ref_encoded}",
+            json=payload
+        )
+
+    def validar_pedido_por_ref(
+        self,
+        order_ref: str,
+        payload: Optional[Dict[str, Any]] = None
+    ):
+        ref_encoded = urllib.parse.quote(
+            order_ref,
+            safe=""
+        )
+        return self._post(
+            f"/orders/by-ref/{ref_encoded}/validate",
+            json=payload or {}
+        )
+
     def pedido(
         self,
         order_id: int
@@ -269,6 +328,12 @@ class ERPProxySincrono:
         return self._post(
             f"/orders/{order_id}/invoice",
             json=payload or {}
+        )
+
+    def documentos_relacionados_pedido(self, order_id: int, **params):
+        return self._get(
+            f"/orders/{order_id}/related-documents",
+            params=params or None
         )
 
     def marcar_pedido_facturado(
@@ -327,6 +392,9 @@ class ERPProxySincrono:
 
     def productos(self):
         return self._get("/products")
+
+    def productos_padre_con_variantes(self, **params):
+        return self._get("/products/parents-with-variants", params=params or None)
 
     def producto(self, product_id: int):
         return self._get(f"/products/{product_id}")
@@ -482,6 +550,22 @@ class ERPProxySincrono:
         return self._get("/contacts")
 
     # ============================================================
+    # Geography / Warehouses
+    # ============================================================
+
+    def paises(self, **params):
+        return self._get("/countries", params=params or None)
+
+    def provincias_pais(self, country_id: int, **params):
+        return self._get(f"/countries/{country_id}/states", params=params or None)
+
+    def provincias(self, **params):
+        return self._get("/states", params=params or None)
+
+    def almacenes(self):
+        return self._get("/warehouses")
+
+    # ============================================================
     # Suppliers
     # ============================================================
 
@@ -494,6 +578,35 @@ class ERPProxySincrono:
     ):
         return self._get(
             f"/suppliers/{supplier_id}"
+        )
+
+    def pedidos_proveedor(
+        self,
+        **params
+    ):
+        return self._get(
+            "/supplier-orders",
+            params=params or None
+        )
+
+    def pedido_proveedor(
+        self,
+        supplier_order_id: int
+    ):
+        return self._get(
+            f"/supplier-orders/{supplier_order_id}"
+        )
+
+    def pedido_proveedor_por_ref(
+        self,
+        supplier_order_ref: str
+    ):
+        ref_encoded = urllib.parse.quote(
+            supplier_order_ref,
+            safe=""
+        )
+        return self._get(
+            f"/supplier-orders/by-ref/{ref_encoded}"
         )
 
     # ============================================================
@@ -640,6 +753,15 @@ class ERPProxySincrono:
             f"/invoices/{invoice_id}/payments"
         )
 
+    def pagos_factura_compra(self, invoice_id: int, **params):
+        return self._get(
+            f"/invoices/purchase/{invoice_id}/payments",
+            params=params or None
+        )
+
+    def datos_verifactu_factura(self, invoice_id: int):
+        return self._get(f"/invoices/{invoice_id}/verifactu-data")
+
     def pagos_factura_bancos(
         self,
         invoice_id: int
@@ -714,6 +836,14 @@ class ERPProxySincrono:
             f"/invoices/{invoice_id}/document/download"
         )
 
+    def preview_documento_factura(
+        self,
+        invoice_id: int
+    ):
+        return self._download(
+            f"/invoices/{invoice_id}/document/preview"
+        )
+
 
     # ============================================================
     # Proposal
@@ -740,6 +870,20 @@ class ERPProxySincrono:
             f"/proposals/by-ref/{ref_encoded}"
         )
 
+    def actualizar_propuesta_por_ref(
+        self,
+        proposal_ref: str,
+        payload: Dict[str, Any]
+    ):
+        ref_encoded = urllib.parse.quote(
+            proposal_ref,
+            safe=""
+        )
+        return self._patch(
+            f"/proposals/by-ref/{ref_encoded}",
+            json=payload
+        )
+
     def propuesta_por_ref_cliente(
         self,
         ref_client: str
@@ -761,6 +905,10 @@ class ERPProxySincrono:
             f"/proposals/{proposal_id}/create/document",
             json=payload or {}
         )
+
+    def adjuntar_documentos_propuesta(self, proposal_id: int, payload: Dict[str, Any]):
+        """Payload: documentos con nombre_fichero y contenido_base64."""
+        return self._post(f"/proposals/{proposal_id}/documents", json=payload)
 
     def descargar_documento_propuesta_por_id(
         self,
@@ -865,6 +1013,25 @@ class ERPProxySincrono:
             json=payload or {}
         )
 
+    def firmar_propuesta(
+        self, proposal_id: int, payload: Optional[Dict[str, Any]] = None, **params
+    ):
+        return self._post(
+            f"/proposal/{proposal_id}/sign",
+            json=payload or {},
+            params=params or None
+        )
+
+    def firmar_propuesta_por_ref(
+        self, proposal_ref: str, payload: Optional[Dict[str, Any]] = None, **params
+    ):
+        ref_encoded = urllib.parse.quote(proposal_ref, safe="")
+        return self._post(
+            f"/proposal/by-ref/{ref_encoded}/sign",
+            json=payload or {},
+            params=params or None
+        )
+
     def validar_propuesta_por_ref_cliente(
         self,
         ref_client: str,
@@ -891,6 +1058,14 @@ class ERPProxySincrono:
             }
         )
 
+    def obtener_contactos_propuesta(
+        self,
+        proposal_id: int
+    ):
+        return self._get(
+            f"/proposal/{proposal_id}/contacts"
+        )
+
     def contactos_propuesta(
         self,
         proposal_id: int,
@@ -898,6 +1073,16 @@ class ERPProxySincrono:
     ):
         return self._post(
             f"/proposal/{proposal_id}/contacts",
+            json=payload
+        )
+
+    def reemplazar_contactos_propuesta(
+        self,
+        proposal_id: int,
+        payload: Dict[str, Any]
+    ):
+        return self._put(
+            f"/proposal/{proposal_id}/contacts/replace",
             json=payload
         )
 
@@ -912,8 +1097,157 @@ class ERPProxySincrono:
         )
 
     # ============================================================
+    # Native purchase queries (distinct from /supplier-orders)
+    # ============================================================
+
+    def terceros(self, **params):
+        return self._get("/thirdparties", params=params or None)
+
+    def tercero(self, thirdparty_id: int):
+        return self._get(f"/thirdparties/{thirdparty_id}")
+
+    def pedidos_proveedor_nativos(self, **params):
+        return self._get("/supplierorders", params=params or None)
+
+    def pedido_proveedor_nativo(self, supplier_order_id: int):
+        return self._get(f"/supplierorders/{supplier_order_id}")
+
+    def recepciones(self, **params):
+        return self._get("/receptions", params=params or None)
+
+    def recepcion(self, reception_id: int):
+        return self._get(f"/receptions/{reception_id}")
+
+    def facturas_proveedor_nativas(self, **params):
+        return self._get("/supplierinvoices", params=params or None)
+
+    def factura_proveedor_nativa(self, invoice_id: int):
+        return self._get(f"/supplierinvoices/{invoice_id}")
+
+    def documentos(self, modulepart: str, **params):
+        """Lista metadatos; indicar id o ref y los filtros de consulta."""
+        return self._get("/documents", params={"modulepart": modulepart, **params})
+
+    # ============================================================
+    # MCP business queries
+    # Optional filters and pagination (limit, next_cursor) go in **params.
+    # ============================================================
+
+    def mcp_terceros(self, **params):
+        return self._get("/mcp/thirdparties", params=params or None)
+
+    def mcp_contactos(self, company: str, **params):
+        return self._get("/mcp/contacts", params={"company": company, **params})
+
+    def mcp_productos(self, **params):
+        return self._get("/mcp/products", params=params or None)
+
+    def mcp_stock_producto(self, product: str, **params):
+        return self._get("/mcp/products/stock", params={"product": product, **params})
+
+    def mcp_precio_producto(self, product: str, customer: str, quantity, **params):
+        return self._get(
+            "/mcp/products/price",
+            params={"product": product, "customer": customer, "quantity": quantity, **params}
+        )
+
+    def mcp_proveedores_producto(self, product: str, **params):
+        return self._get("/mcp/products/suppliers", params={"product": product, **params})
+
+    def mcp_pedidos(self, **params):
+        return self._get("/mcp/orders", params=params or None)
+
+    def mcp_detalle_pedido(self, **params):
+        return self._get("/mcp/orders/detail", params=params or None)
+
+    def mcp_propuestas(self, **params):
+        return self._get("/mcp/proposals", params=params or None)
+
+    def mcp_detalle_propuesta(self, **params):
+        return self._get("/mcp/proposals/detail", params=params or None)
+
+    def mcp_facturas(self, type: str, **params):
+        """type: sale o purchase."""
+        return self._get("/mcp/invoices", params={"type": type, **params})
+
+    def mcp_detalle_factura(self, type: str, **params):
+        """type: sale o purchase."""
+        return self._get("/mcp/invoices/detail", params={"type": type, **params})
+
+    def mcp_cobros_clientes(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/customer-payments",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_pagos_proveedores(self, supplier: str, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/supplier-payments",
+            params={"supplier": supplier, "from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_cuentas_bancarias(self, **params):
+        return self._get("/mcp/bank-accounts", params=params or None)
+
+    def mcp_movimientos_bancarios(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/bank-movements",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_gastos_bancarios(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/bank-expenses",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_transferencias_internas(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/internal-transfers",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_informe_ventas(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/reports/sales",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_informe_ventas_producto(self, from_date: str, to_date: str, **params):
+        return self._get(
+            "/mcp/reports/product-sales",
+            params={"from_date": from_date, "to_date": to_date, **params}
+        )
+
+    def mcp_informe_pagos(self, direction: str, from_date: str, to_date: str, **params):
+        """direction: incoming u outgoing."""
+        return self._get(
+            "/mcp/reports/payments",
+            params={"direction": direction, "from_date": from_date, "to_date": to_date, **params}
+        )
+
+    # ============================================================
     # Admin
     # ============================================================
 
     def health(self):
         return self._get("/health")
+
+    def openapi(self):
+        return self._get("/openapi.json")
+
+    def docs(self):
+        return self.client._request(
+            "GET", f"{self.base_url}/docs", headers=self.headers, timeout=self.timeout
+        ).text
+
+    def docs_oauth2_redirect(self):
+        return self.client._request(
+            "GET", f"{self.base_url}/docs/oauth2-redirect",
+            headers=self.headers, timeout=self.timeout
+        ).text
+
+    def redoc(self):
+        return self.client._request(
+            "GET", f"{self.base_url}/redoc", headers=self.headers, timeout=self.timeout
+        ).text
