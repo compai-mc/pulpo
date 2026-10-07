@@ -97,6 +97,14 @@ class ERPProxySincrono:
             **kwargs
         )
 
+    def _delete(self, path: str, **kwargs):
+        kwargs.setdefault("timeout", self.timeout)
+        return self.client.delete(
+            f"{self.base_url}{path}",
+            headers=self.headers,
+            **kwargs
+        )
+
     def _download(self, path: str, **kwargs):
         kwargs.setdefault("timeout", self.timeout)
         response = self.client._request(
@@ -1123,6 +1131,57 @@ class ERPProxySincrono:
 
     def factura_proveedor_nativa(self, invoice_id: int):
         return self._get(f"/supplierinvoices/{invoice_id}")
+
+    def crear_factura_proveedor(self, payload: Dict[str, Any]):
+        """Crea un borrador con socid y ref_supplier; no valida ni reintenta."""
+        return self._post("/supplierinvoices", json=payload)
+
+    def crear_linea_factura_proveedor(self, invoice_id: int, payload: Dict[str, Any]):
+        """Envia description, pu_ht, qty, tva_tx y los campos adicionales de la linea."""
+        return self._post(f"/supplierinvoices/{invoice_id}/lines", json=payload)
+
+    def validar_factura_proveedor(
+        self, invoice_id: int, payload: Optional[Dict[str, Any]] = None
+    ):
+        """Valida con idwarehouse y notrigger opcionales en el cuerpo JSON."""
+        return self._post(f"/supplierinvoices/{invoice_id}/validate", json=payload or {})
+
+    def actualizar_factura_proveedor(self, invoice_id: int, payload: Dict[str, Any]):
+        """Modifica la cabecera; el micro no permite cambiar ID, estado ni lineas."""
+        return self._put(f"/supplierinvoices/{invoice_id}", json=payload)
+
+    def actualizar_linea_factura_proveedor(
+        self, invoice_id: int, line_id: int, payload: Dict[str, Any]
+    ):
+        """PUT de la linea completa, incluidos los valores que se quieran conservar."""
+        return self._put(f"/supplierinvoices/{invoice_id}/lines/{line_id}", json=payload)
+
+    def eliminar_linea_factura_proveedor(self, invoice_id: int, line_id: int):
+        return self._delete(f"/supplierinvoices/{invoice_id}/lines/{line_id}")
+
+    def subir_documento(self, payload: Dict[str, Any]):
+        """Envia filename, modulepart, ref y filecontent (base64) como JSON.
+
+        Para facturas de proveedor: modulepart=supplier_invoice y ref del ERP,
+        no ref_supplier. El micro sobrescribe el mismo nombre sin subdirectorios.
+        """
+        return self._post("/documents/upload", json=payload)
+
+    def condiciones_pago(self, **params):
+        """Filtros: limit, page, sortorder, sqlfilters, active y sortfield."""
+        return self._get("/setup/dictionary/payment_terms", params=params or None)
+
+    def formas_pago(self, **params):
+        """Filtros: limit, page, sortorder, sqlfilters, active y sortfield."""
+        return self._get("/setup/dictionary/payment_types", params=params or None)
+
+    def tipos_iva(self, **params):
+        """Filtros de diccionario y fk_country (-1 empresa, 0 todos o ID de pais)."""
+        return self._get("/setup/dictionary/vat", params=params or None)
+
+    def monedas(self, **params):
+        """Filtros de diccionario y multicurrency (0 monedas, 1/2 cambios)."""
+        return self._get("/setup/dictionary/currencies", params=params or None)
 
     def documentos(self, modulepart: str, **params):
         """Lista metadatos; indicar id o ref y los filtros de consulta."""
