@@ -117,7 +117,7 @@ def load_env(
     config_especifico = {}
 
     try:
-        from pulpo.proxies.proxy_config_service import ConfigClient
+        from pulpo.proxies.proxy_config_service_secure.py import ConfigClient
         config_global = ConfigClient().get_config("compai_global").get("config", {})
         config_global_static = config_global.get("static", {})
 
