@@ -580,6 +580,23 @@ class ERPProxySincrono:
     def proveedores(self):
         return self._get("/suppliers")
 
+    def crear_proveedor(self, payload: Dict[str, Any]):
+        return self._post("/suppliers", json=payload)
+
+    def proveedores_con_contactos(self, **params):
+        """Admite limit y page para paginar proveedores y sus contactos."""
+        return self._get("/suppliers/with-contacts", params=params or None)
+
+    def proveedor_por_telefono(self, phone: str):
+        phone_encoded = urllib.parse.quote(phone, safe="")
+        return self._get(f"/suppliers/by-phone/{phone_encoded}")
+
+    def contactos_proveedor(self, supplier_id: int):
+        return self._get(f"/suppliers/{supplier_id}/contacts")
+
+    def crear_contacto_proveedor(self, supplier_id: int, payload: Dict[str, Any]):
+        return self._post(f"/suppliers/{supplier_id}/contacts", json=payload)
+
     def proveedor(
         self,
         supplier_id: int
@@ -596,6 +613,14 @@ class ERPProxySincrono:
             "/supplier-orders",
             params=params or None
         )
+
+    def crear_pedido_proveedor(self, payload: Dict[str, Any]):
+        """Crea cabecera y lineas en borrador; no valida ni envia el pedido."""
+        return self._post("/supplier-orders", json=payload)
+
+    def descargar_documento_pedido_proveedor(self, supplier_order_id: int):
+        """Descarga el PDF existente y devuelve su contenido en base64."""
+        return self._download(f"/supplier-orders/{supplier_order_id}/document/download")
 
     def pedido_proveedor(
         self,
@@ -1120,6 +1145,10 @@ class ERPProxySincrono:
     def pedido_proveedor_nativo(self, supplier_order_id: int):
         return self._get(f"/supplierorders/{supplier_order_id}")
 
+    def recepciones_pedido_proveedor(self, supplier_order_id: int, **params):
+        """Recepciones vinculadas a la PO, con filtros y paginacion nativos."""
+        return self._get(f"/supplierorders/{supplier_order_id}/receptions", params=params or None)
+
     def recepciones(self, **params):
         return self._get("/receptions", params=params or None)
 
@@ -1131,6 +1160,10 @@ class ERPProxySincrono:
 
     def factura_proveedor_nativa(self, invoice_id: int):
         return self._get(f"/supplierinvoices/{invoice_id}")
+
+    def vincular_factura_proveedor(self, invoice_id: int, payload: Dict[str, Any]):
+        """El cuerpo debe contener supplier_order_id, reception_id o ambos."""
+        return self._post(f"/supplierinvoices/{invoice_id}/links", json=payload)
 
     def crear_factura_proveedor(self, payload: Dict[str, Any]):
         """Crea un borrador con socid y ref_supplier; no valida ni reintenta."""
@@ -1186,6 +1219,71 @@ class ERPProxySincrono:
     def documentos(self, modulepart: str, **params):
         """Lista metadatos; indicar id o ref y los filtros de consulta."""
         return self._get("/documents", params={"modulepart": modulepart, **params})
+
+    # ============================================================
+    # Manual documents
+    # ============================================================
+
+    def documentos_manuales(self, directory_path: str, **params):
+        """Admite limit, offset y checksum; directory_path es relativo a ECM."""
+        return self._get(
+            "/documents/manual/files", params={"directory_path": directory_path, **params}
+        )
+
+    def directorios_manuales(self, parent_path: str = "", **params):
+        """Lista subdirectorios con limit y offset opcionales."""
+        return self._get(
+            "/documents/manual/directories", params={"parent_path": parent_path, **params}
+        )
+
+    def descargar_documento_manual(self, file_id: str):
+        """Usa el ID opaco devuelto por documentos_manuales, no el rowid del ERP."""
+        file_id_encoded = urllib.parse.quote(file_id, safe="")
+        return self._download(f"/documents/manual/files/{file_id_encoded}/download")
+
+    def subir_documento_manual(
+        self,
+        file_path: str,
+        directory_path: str,
+        overwrite: bool = False,
+        content_type: str = "application/octet-stream",
+    ):
+        """Sube un fichero local a una carpeta ECM existente mediante multipart."""
+        # HTTPX debe generar Content-Type con el boundary del formulario multipart.
+        headers = {key: value for key, value in self.headers.items() if key.lower() != "content-type"}
+        with open(file_path, "rb") as file:
+            return self.client._request(
+                "POST",
+                f"{self.base_url}/documents/manual/upload",
+                headers=headers,
+                timeout=self.timeout,
+                data={"directory_path": directory_path, "overwrite": str(overwrite).lower()},
+                files={"file": (os.path.basename(file_path), file, content_type)},
+            ).json()
+
+    # ============================================================
+    # PCM
+    # ============================================================
+
+    def pedidos_sync_pcm(self, payload: Optional[Dict[str, Any]] = None):
+        """Inicia PCM: mode, from_date, to_date, date_basis y group_by_parent opcionales."""
+        return self._post("/orders/sync/pcm", json=payload or {})
+
+    def crear_trabajo_pcm(self, payload: Optional[Dict[str, Any]] = None):
+        """Sin opciones usa preview y todo el historico; no espera a que termine."""
+        return self._post("/pcm/jobs", json=payload or {})
+
+    def trabajo_pcm(self, job_id: str):
+        job_id_encoded = urllib.parse.quote(job_id, safe="")
+        return self._get(f"/pcm/jobs/{job_id_encoded}")
+
+    def descargar_trabajo_pcm(self, job_id: str):
+        """Devuelve JSON con download_url; no descarga el fichero de MinIO."""
+        job_id_encoded = urllib.parse.quote(job_id, safe="")
+        return self._get(f"/pcm/jobs/{job_id_encoded}/download")
+
+    def reglas_pcm(self):
+        return self._get("/pcm/rules")
 
     # ============================================================
     # MCP business queries
