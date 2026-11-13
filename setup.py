@@ -2,16 +2,16 @@ from setuptools import setup, find_packages
 
 setup(
     name="pulpo",
-    version="5.9.15",
+    version="5.9.16",
     packages=find_packages(),
     install_requires=[
         "requests",
         "python-arango",
         "kafka-python",
-        #"langroid",
         "hvac",
         "httpx",
         "json5",
-        "PyJWT"
+        "PyJWT",
+        "boto3"
     ],
 )
