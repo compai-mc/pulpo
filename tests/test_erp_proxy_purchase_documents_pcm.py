@@ -70,6 +70,54 @@ class ERPProxyEndpointsTest(unittest.TestCase):
                                                headers=self.proxy.headers, timeout=42, **expected)
                 self.assertIs(result, method.return_value)
 
+    def test_invoice_records_and_purchase_documents(self):
+        payload = {"socid": 12, "ref_supplier": "FAC A/B", "lines": [], "validate": False}
+        header = {"note_public": None, "fk_project": 0, "array_options": {"options_test": "value"}}
+        validation = {"idwarehouse": 0, "notrigger": 1}
+        document = {"supplier_order_ids": [9, 10], "reception_ids": [4], "validate": False}
+        params = {"doctemplate": "test_model", "langcode": "es_ES", "supplier_order_id": 9,
+                  "reception_id": 4, "validate": False}
+        cases = [
+            ("validar_pedido_proveedor", (9, validation), {}, "post", "/supplier-orders/9/validate", {"json": validation}),
+            ("validar_pedido_proveedor", (9,), {}, "post", "/supplier-orders/9/validate", {"json": {}}),
+            ("crear_documento_pedido_proveedor", (9,), {"doctemplate": "test_model", "langcode": "es_ES"},
+             "post", "/supplier-orders/9/document", {"params": {"doctemplate": "test_model", "langcode": "es_ES"}}),
+            ("factura_venta", (8,), {}, "get", "/invoices/sales/8", {}),
+            ("factura", (8,), {}, "get", "/invoices/8", {}),
+            ("factura_compra", (8,), {}, "get", "/invoices/purchase/8", {}),
+            ("crear_factura_venta", (payload,), {}, "post", "/invoices/sales", {"json": payload}),
+            ("crear_factura", (payload,), {}, "post", "/invoices", {"json": payload}),
+            ("crear_factura_compra", (payload,), {"validate": False, "generate_pdf": False}, "post",
+             "/invoices/purchase", {"json": payload, "params": {"validate": False, "generate_pdf": False}}),
+            ("crear_factura_compra", (payload,), {}, "post", "/invoices/purchase", {"json": payload, "params": None}),
+            ("actualizar_factura_venta", (8, header), {}, "patch", "/invoices/sales/8", {"json": header}),
+            ("actualizar_factura", (8, header), {}, "patch", "/invoices/8", {"json": header}),
+            ("actualizar_factura_compra", (8, header), {}, "patch", "/invoices/purchase/8", {"json": header}),
+            ("actualizar_cabecera_factura_proveedor", (8, header), {}, "patch", "/supplierinvoices/8", {"json": header}),
+            ("actualizar_factura_proveedor", (8, header), {}, "put", "/supplierinvoices/8", {"json": header}),
+        ]
+        for name, route in (
+            ("crear_documento_factura_compra", "/invoices/purchase/8/create/document"),
+            ("crear_documento_factura_proveedor", "/supplierinvoices/8/create/document"),
+            ("generar_documento_factura_proveedor", "/supplierinvoices/8/document"),
+        ):
+            cases.append((name, (8, document), params, "post", route, {"json": document, "params": params}))
+            cases.append((name, (8,), {}, "post", route, {"json": {}, "params": None}))
+        for name, args, kwargs, verb, route, expected in cases:
+            with self.subTest(method=name, kwargs=kwargs):
+                method = getattr(self.client, verb)
+                method.reset_mock()
+                result = getattr(self.proxy, name)(*args, **kwargs)
+                method.assert_called_once_with("http://erp.test" + route,
+                                               headers=self.proxy.headers, timeout=42, **expected)
+                self.assertIs(result, method.return_value)
+
+    def test_invoice_errors_propagate_without_proxy_retry(self):
+        self.client.post.side_effect = RuntimeError("invoice created, PDF failed")
+        with self.assertRaisesRegex(RuntimeError, "invoice created"):
+            self.proxy.crear_factura_compra({"socid": 12, "ref_supplier": "FAC 1"}, generate_pdf=True)
+        self.client.post.assert_called_once()
+
     def test_pcm_defaults(self):
         for method, route in (("crear_trabajo_pcm", "/pcm/jobs"), ("pedidos_sync_pcm", "/orders/sync/pcm")):
             getattr(self.proxy, method)()
@@ -81,6 +129,8 @@ class ERPProxyEndpointsTest(unittest.TestCase):
         self.client._request.return_value = Mock(headers={"content-type": "application/pdf"}, content=content)
         for name, identifier, route in (
             ("descargar_documento_pedido_proveedor", 9, "/supplier-orders/9/document/download"),
+            ("descargar_documento_factura_compra", 8, "/invoices/purchase/8/document/download"),
+            ("descargar_documento_factura_proveedor", 8, "/supplierinvoices/8/document/download"),
             ("descargar_documento_manual", "opaque?=#", "/documents/manual/files/opaque%3F%3D%23/download"),
         ):
             result = getattr(self.proxy, name)(identifier)

@@ -618,6 +618,16 @@ class ERPProxySincrono:
         """Crea cabecera y lineas en borrador; no valida ni envia el pedido."""
         return self._post("/supplier-orders", json=payload)
 
+    def validar_pedido_proveedor(
+        self, supplier_order_id: int, payload: Optional[Dict[str, Any]] = None
+    ):
+        """Valida sin aprobar ni enviar; admite idwarehouse y notrigger en JSON."""
+        return self._post(f"/supplier-orders/{supplier_order_id}/validate", json=payload or {})
+
+    def crear_documento_pedido_proveedor(self, supplier_order_id: int, **params):
+        """Genera el PDF sin validar el pedido; admite doctemplate y langcode."""
+        return self._post(f"/supplier-orders/{supplier_order_id}/document", params=params or None)
+
     def descargar_documento_pedido_proveedor(self, supplier_order_id: int):
         """Descarga el PDF existente y devuelve su contenido en base64."""
         return self._download(f"/supplier-orders/{supplier_order_id}/document/download")
@@ -712,6 +722,87 @@ class ERPProxySincrono:
             "/invoices",
             params=params or None
         )
+
+    def factura_venta(self, invoice_id: int):
+        """Ficha completa de factura de cliente, incluidas lineas y vinculos."""
+        return self._get(f"/invoices/sales/{invoice_id}")
+
+    def factura(self, invoice_id: int):
+        """Alias de consulta de factura de cliente; no consulta compras."""
+        return self._get(f"/invoices/{invoice_id}")
+
+    def crear_factura_venta(self, payload: Dict[str, Any]):
+        """Crea un borrador y devuelve su ficha completa; no valida ni genera PDF."""
+        return self._post("/invoices/sales", json=payload)
+
+    def crear_factura(self, payload: Dict[str, Any]):
+        """Alias de creacion de factura de cliente con respuesta completa."""
+        return self._post("/invoices", json=payload)
+
+    def actualizar_factura_venta(self, invoice_id: int, payload: Dict[str, Any]):
+        """PATCH de cabecera; no modifica lineas, estado ni pagos, ni regenera PDF."""
+        return self._patch(f"/invoices/sales/{invoice_id}", json=payload)
+
+    def actualizar_factura(self, invoice_id: int, payload: Dict[str, Any]):
+        """Alias de PATCH de cabecera de factura de cliente."""
+        return self._patch(f"/invoices/{invoice_id}", json=payload)
+
+    def factura_compra(self, invoice_id: int):
+        """Ficha completa de factura de proveedor o acreedor."""
+        return self._get(f"/invoices/purchase/{invoice_id}")
+
+    def crear_factura_compra(self, payload: Dict[str, Any], **params):
+        """Crea y relee la factura; validate y generate_pdf admiten body o query.
+
+        Query tiene prioridad. Sin flags crea un borrador; generate_pdf=true
+        valida y genera PDF. No repetir la creacion tras un fallo tardio.
+        """
+        return self._post("/invoices/purchase", json=payload, params=params or None)
+
+    def actualizar_factura_compra(self, invoice_id: int, payload: Dict[str, Any]):
+        """PATCH de cabecera de compra; conserva los campos no indicados."""
+        return self._patch(f"/invoices/purchase/{invoice_id}", json=payload)
+
+    def actualizar_cabecera_factura_proveedor(self, invoice_id: int, payload: Dict[str, Any]):
+        """Alias PATCH de compra, distinto del PUT actualizar_factura_proveedor."""
+        return self._patch(f"/supplierinvoices/{invoice_id}", json=payload)
+
+    def crear_documento_factura_compra(
+        self, invoice_id: int, payload: Optional[Dict[str, Any]] = None, **params
+    ):
+        """Vincula PO/recepciones y genera PDF; VALIDA por defecto.
+
+        Admite validate, doctemplate, langcode, supplier_order_id y reception_id
+        en body o query; las listas de vinculos van en el body. validate=False
+        permite generar un PDF provisional sin validar la factura.
+        """
+        return self._post(
+            f"/invoices/purchase/{invoice_id}/create/document", json=payload or {}, params=params or None
+        )
+
+    def crear_documento_factura_proveedor(
+        self, invoice_id: int, payload: Optional[Dict[str, Any]] = None, **params
+    ):
+        """Alias /create/document de compra; valida por defecto salvo validate=False."""
+        return self._post(
+            f"/supplierinvoices/{invoice_id}/create/document", json=payload or {}, params=params or None
+        )
+
+    def generar_documento_factura_proveedor(
+        self, invoice_id: int, payload: Optional[Dict[str, Any]] = None, **params
+    ):
+        """Ruta /document de compra; valida por defecto salvo validate=False."""
+        return self._post(
+            f"/supplierinvoices/{invoice_id}/document", json=payload or {}, params=params or None
+        )
+
+    def descargar_documento_factura_compra(self, invoice_id: int):
+        """Descarga el PDF de compra y devuelve su contenido en base64."""
+        return self._download(f"/invoices/purchase/{invoice_id}/document/download")
+
+    def descargar_documento_factura_proveedor(self, invoice_id: int):
+        """Descarga el PDF de proveedor y devuelve su contenido en base64."""
+        return self._download(f"/supplierinvoices/{invoice_id}/document/download")
 
     def crear_factura_venta_personalizada(
         self,
